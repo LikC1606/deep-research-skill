@@ -1,0 +1,20 @@
+{
+  "name": "likc1606-skills",
+  "interface": {
+    "displayName": "LikC1606 Skills"
+  },
+  "plugins": [
+    {
+      "name": "deep-research",
+      "source": {
+        "source": "local",
+        "path": "./plugins/deep-research"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deep Research"
+  short_description: "从任务反推真正应查的高价值资料并形成可信总结"
+  default_prompt: "Use $deep-research to identify what evidence this task truly needs, research it, and produce a concise cited synthesis."

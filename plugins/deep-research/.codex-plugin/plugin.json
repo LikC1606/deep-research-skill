@@ -1,0 +1,27 @@
+{
+  "name": "deep-research",
+  "version": "1.0.0",
+  "description": "Task-driven web research with evidence-first search, reading, synthesis, and competition postmortem discovery.",
+  "author": {
+    "name": "Zhenhao Liu",
+    "url": "https://github.com/LikC1606"
+  },
+  "homepage": "https://github.com/LikC1606/deep-research-skill",
+  "repository": "https://github.com/LikC1606/deep-research-skill",
+  "license": "MIT",
+  "keywords": ["deep-research", "web-search", "evidence", "synthesis", "kaggle"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Deep Research",
+    "shortDescription": "Find and synthesize task-relevant evidence.",
+    "longDescription": "Turn a research task into evidence needs, search and read primary sources, and synthesize grounded conclusions. Competition research prioritizes participant postmortems, decisions, failures, and transferable lessons over leaderboard scores alone.",
+    "developerName": "Zhenhao Liu",
+    "category": "Productivity",
+    "capabilities": ["Web research", "Evidence synthesis"],
+    "websiteURL": "https://github.com/LikC1606/deep-research-skill",
+    "defaultPrompt": [
+      "Research this task and synthesize the strongest evidence.",
+      "Find participant postmortems and lessons from this competition."
+    ]
+  }
+}
