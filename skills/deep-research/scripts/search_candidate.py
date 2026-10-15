@@ -12,6 +12,7 @@ import argparse
 import importlib.util
 import json
 import math
+import os
 import re
 import sys
 import urllib.parse
@@ -19,7 +20,7 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from pathlib import Path
 
-import fitz
+import pymupdf
 import requests
 from bs4 import BeautifulSoup
 
@@ -264,40 +265,60 @@ def _fetch_bytes(url: str) -> tuple[bytes, str, str]:
         allow_redirects=True,
         stream=True,
     )
-    if not base._url_ok(response.url):
-        raise ValueError(f"redirected to blocked URL: {response.url}")
-    response.raise_for_status()
-    chunks = []
-    size = 0
-    for chunk in response.iter_content(64 * 1024):
-        if not chunk:
-            continue
-        remaining = MAX_DOWNLOAD_BYTES - size
-        if remaining <= 0:
-            break
-        chunks.append(chunk[:remaining])
-        size += min(len(chunk), remaining)
-    return b"".join(chunks), response.url, response.headers.get("Content-Type", "")
+    try:
+        if not base._url_ok(response.url):
+            raise ValueError(f"redirected to blocked URL: {response.url}")
+        response.raise_for_status()
+        chunks = []
+        size = 0
+        for chunk in response.iter_content(64 * 1024):
+            size += len(chunk)
+            if size > MAX_DOWNLOAD_BYTES:
+                raise ValueError("document exceeds download size limit")
+            chunks.append(chunk)
+        return b"".join(chunks), response.url, response.headers.get("Content-Type", "")
+    finally:
+        response.close()
 
 
 def _normalise_text(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip()[:MAX_TEXT_CHARS]
 
 
-def _pdf_text(raw: bytes) -> tuple[str, str]:
-    with fitz.open(stream=raw, filetype="pdf") as document:
+def _document_text(value: str) -> str:
+    return value.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
+def _pdf_text(raw: bytes, details: dict | None = None) -> tuple[str, str]:
+    with pymupdf.open(stream=raw, filetype="pdf") as document:
         metadata = document.metadata or {}
         title = base._clean(metadata.get("title") or "", 240)
         parts = []
         size = 0
-        for page in document:
-            value = page.get_text("text")
+        pages = []
+        truncated = False
+        for number, page in enumerate(document, 1):
+            value = _document_text(page.get_text("text"))
             if value:
+                remaining = MAX_TEXT_CHARS - size - (2 if parts else 0)
+                if remaining <= 0:
+                    truncated = True
+                    break
+                if parts:
+                    size += 2
+                start = size
+                truncated = len(value) > remaining
+                value = value[:remaining]
                 parts.append(value)
                 size += len(value)
+                pages.append({"page": number, "start_char": start, "end_char": size})
             if size >= MAX_TEXT_CHARS:
+                truncated = truncated or number < len(document)
                 break
-    return title, _normalise_text(" ".join(parts))
+        if details is not None:
+            details["pages"] = pages
+            details["truncated"] = truncated
+    return title, "\n\n".join(parts)
 
 
 def _html_text(raw: bytes, encoding: str = "utf-8") -> tuple[str, str]:
@@ -306,8 +327,8 @@ def _html_text(raw: bytes, encoding: str = "utf-8") -> tuple[str, str]:
         node.decompose()
     title = base._clean(soup.title.get_text(" ") if soup.title else "", 240)
     main = soup.select_one("main, article")
-    text = (main or soup).get_text(" ")
-    return title, _normalise_text(text)
+    text = (main or soup).get_text("\n", strip=True)
+    return title, _document_text(text)
 
 
 def _soft_error_page(title: str, text: str) -> bool:
@@ -347,7 +368,7 @@ def _github_raw_url(url: str) -> str | None:
     if parsed.netloc.casefold().removeprefix("www.") != "github.com":
         return None
     parts = parsed.path.split("/")
-    if len(parts) < 7 or parts[3] != "blob":
+    if len(parts) < 6 or parts[3] != "blob":
         return None
     raw_path = "/".join(parts[1:3] + parts[4:])
     return "https://raw.githubusercontent.com/" + raw_path
@@ -448,21 +469,32 @@ def _windows(text: str, terms: list[str], window: int, max_windows: int) -> list
     ]
 
 
-def read_page(url: str, terms: list[str], window: int = 650, max_windows: int = 5) -> dict:
+def read_page(
+    url: str, terms: list[str], window: int = 650, max_windows: int = 5,
+    *, include_body: bool = False,
+) -> dict:
+    policy = (os.environ.get("DEEP_RESEARCH_SOURCE_POLICY") or os.environ.get(
+        "DRBENCH_SOURCE_POLICY", "web_allowed"
+    )).strip().casefold()
+    if policy not in {"local_only", "web_allowed", "mixed"}:
+        raise ValueError(f"unsupported source policy: {policy}")
+    if policy == "local_only":
+        raise RuntimeError("web reading is disabled by source_policy=local_only")
     base._reserve("read")
     attempts = []
     arxiv_pdf = _arxiv_pdf(url)
     candidates = [(arxiv_pdf, "arxiv_pdf")] if arxiv_pdf else []
-    candidates.append((url, "direct"))
     github_raw = _github_raw_url(url)
     if github_raw:
         candidates.append((github_raw, "github_raw"))
+    candidates.append((url, "direct"))
     title = ""
     text = ""
     final_url = url
     content_type = ""
     fallback = "none"
     errors = []
+    details = {}
     openalex_id = _openalex_id_from_url(url)
     doi = _doi_from_url(url)
     pubmed_id = _pubmed_id_from_url(url)
@@ -488,8 +520,14 @@ def read_page(url: str, terms: list[str], window: int = 650, max_windows: int = 
             raw, fetched_url, mime = _fetch_bytes(target)
             is_pdf = raw.startswith(b"%PDF") or "application/pdf" in mime.casefold()
             if is_pdf:
-                title, text = _pdf_text(raw)
+                title, text = _pdf_text(raw, details)
                 content_type = "pdf"
+            elif mime.split(";", 1)[0].casefold() in {
+                "text/plain", "text/markdown", "application/json",
+            }:
+                text = _document_text(raw.decode("utf-8", errors="replace"))
+                title = ""
+                content_type = "text"
             else:
                 encoding_match = re.search(r"charset=([^; ]+)", mime, re.IGNORECASE)
                 encoding = encoding_match.group(1).strip('"\'') if encoding_match else "utf-8"
@@ -517,6 +555,8 @@ def read_page(url: str, terms: list[str], window: int = 650, max_windows: int = 
     if not text:
         raise RuntimeError("; ".join(errors) or f"no readable text: {url}")
 
+    truncated = bool(details.get("truncated")) or len(text) > MAX_TEXT_CHARS
+    text = text[:MAX_TEXT_CHARS]
     result = {
         "url": url,
         "resolved_url": final_url,
@@ -531,8 +571,13 @@ def read_page(url: str, terms: list[str], window: int = 650, max_windows: int = 
         ),
         "fallback": fallback,
         "failed_attempts": len(errors),
+        "content_scope": "abstract" if content_type.endswith("_abstract") else "full_text",
+        "truncated": truncated,
+        "pages": details.get("pages", []) if content_type == "pdf" else [],
     }
     base._record_event("read", result)
+    if include_body:
+        result["_body"] = text
     return result
 
 

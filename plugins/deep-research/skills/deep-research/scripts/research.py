@@ -28,8 +28,30 @@ def _load_v1():
     return module
 
 
+def _load_anysearch():
+    path = Path(__file__).with_name("anysearch_provider.py")
+    spec = importlib.util.spec_from_file_location("deep_research_anysearch", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load AnySearch adapter: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_workspace():
+    path = Path(__file__).with_name("workspace.py")
+    spec = importlib.util.spec_from_file_location("deep_research_workspace", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load research workspace: {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 v1 = _load_v1()
 base = v1.base
+anysearch = _load_anysearch()
+workspace = _load_workspace()
 ATOM = {"atom": "http://www.w3.org/2005/Atom"}
 EXTRA_STOPWORDS = {"arxiv", "http", "https", "paper", "report", "site", "study", "www"}
 PRACTITIONER_CONTEXT_RE = re.compile(
@@ -49,6 +71,7 @@ WINNER_RE = re.compile(r"\b(?:winner|winning|(?:1st|first)[ -]?place)\b|冠军",
 ARTIFACT_TYPES = (
     "official", "paper", "repository", "code", "issue", "benchmark", "postmortem", "writeup"
 )
+SEARCH_PROVIDERS = ("auto", "direct", "anysearch", "hybrid")
 GITHUB_ARTIFACTS = {"repository", "code", "writeup", "postmortem"}
 SCOPE_STATE_FILE = ".deep-research-scope.json"
 SCOPE_GENERIC_TERMS = {
@@ -281,8 +304,7 @@ def _duckduckgo(query: str, limit: int) -> list[dict]:
     return cards
 
 
-def _search_base(query: str, limit: int = 8) -> dict:
-    base._reserve("search")
+def _search_direct(query: str, limit: int = 8) -> dict:
     web_cards = _duckduckgo(query, max(8, limit))
     if len(web_cards) < 2:
         web_cards.extend(base._bing(query, max(8, limit)))
@@ -344,7 +366,97 @@ def _search_base(query: str, limit: int = 8) -> dict:
                 "official_candidates",
                 {"target": canonical, "need": query, "results": official_cards},
             )
-    result = {"query": query, "results": ranked}
+    return {"query": query, "results": ranked}
+
+
+def _source_policy() -> str:
+    value = os.environ.get("DEEP_RESEARCH_SOURCE_POLICY") or os.environ.get(
+        "DRBENCH_SOURCE_POLICY", "web_allowed"
+    )
+    value = value.strip().casefold()
+    if value not in {"local_only", "web_allowed", "mixed"}:
+        raise ValueError(f"unsupported source policy: {value}")
+    return value
+
+
+def _provider_mode(requested: str | None) -> str:
+    value = requested or os.environ.get("DEEP_RESEARCH_SEARCH_PROVIDER") or os.environ.get(
+        "DRBENCH_SEARCH_PROVIDER", "auto"
+    )
+    value = value.strip().casefold()
+    if value not in SEARCH_PROVIDERS:
+        raise ValueError(
+            f"unsupported search provider: {value}; choose {', '.join(SEARCH_PROVIDERS)}"
+        )
+    return value
+
+
+def _search_anysearch(query: str, limit: int, artifact: str | None) -> list[dict]:
+    cards = []
+    for card in anysearch.search(query, limit, artifact):
+        url = str(card.get("url") or "").strip()
+        title = base._clean(str(card.get("title") or ""), 240)
+        if not url or not title or not base._url_ok(url):
+            continue
+        cards.append(
+            {
+                "title": title,
+                "url": url,
+                "snippet": base._clean(str(card.get("snippet") or ""), 900),
+                "engine": "anysearch",
+                "source_type": v1._source_type(url, "anysearch"),
+            }
+        )
+    return v1._rank(cards, query, limit)
+
+
+def _search_base(
+    query: str,
+    limit: int = 8,
+    provider: str | None = None,
+    artifact: str | None = None,
+) -> dict:
+    policy = _source_policy()
+    if policy == "local_only":
+        raise RuntimeError(
+            "web search is disabled by source_policy=local_only; use local files only"
+        )
+
+    mode = _provider_mode(provider)
+    base._reserve("search")
+    provider_errors = []
+    providers_used = []
+    anysearch_cards = []
+    direct_cards = []
+
+    if mode in {"auto", "anysearch", "hybrid"}:
+        try:
+            anysearch_cards = _search_anysearch(query, limit, artifact)
+            providers_used.append("anysearch")
+        except anysearch.AnySearchError as exc:
+            provider_errors.append(
+                {"provider": "anysearch", "error": str(exc)[:240]}
+            )
+            if mode == "anysearch":
+                raise RuntimeError(provider_errors[-1]["error"]) from None
+
+    need_direct = mode in {"direct", "hybrid"} or (
+        mode == "auto" and len(anysearch_cards) < min(2, limit)
+    )
+    if need_direct:
+        direct_result = _search_direct(query, limit)
+        direct_cards = list(direct_result.get("results", []))
+        providers_used.append("direct")
+
+    combined = v1._rank(anysearch_cards + direct_cards, query, limit)
+    result = {
+        "query": query,
+        "results": combined,
+        "provider_mode": mode,
+        "providers_used": providers_used,
+    }
+    if provider_errors:
+        result["provider_errors"] = provider_errors
     base._record_event("search", result)
     return result
 
@@ -917,9 +1029,10 @@ def search(
     target: str | None = None,
     artifact: str | None = None,
     proof: str | None = None,
+    provider: str | None = None,
 ) -> dict:
     if target is None and artifact is None and proof is None:
-        return _search_base(query, limit)
+        return _search_base(query, limit, provider=provider)
     query = _clean_query(query)
     target = _clean_query(target or "")
     proof = _clean_query(proof or "")
@@ -932,7 +1045,9 @@ def search(
     if scope_gate:
         _open_scope(target)
     effective_query = _route_query(query, artifact)
-    result = _search_base(effective_query, limit)
+    result = _search_base(
+        effective_query, limit, provider=provider, artifact=artifact
+    )
     if scope_gate:
         official_card = _kaggle_official_card(target, query)
         if official_card:
@@ -1080,6 +1195,7 @@ def _read_github_readme(
     parts = _github_repository_parts(url)
     if not parts:
         raise ValueError("not a GitHub repository root")
+    base._reserve("read")
     owner, repository = parts
     api_url = "https://api.github.com/repos/" + urllib.parse.quote(
         f"{owner}/{repository}/readme", safe="/"
@@ -1100,7 +1216,7 @@ def _read_github_readme(
     response.raise_for_status()
     if len(response.content) > 2_000_000:
         raise ValueError("GitHub README exceeds size limit")
-    text = v1._normalise_text(response.text)
+    text = v1._document_text(response.text)
     if not text:
         raise RuntimeError("GitHub repository has no readable README")
     # Compact windows keep the requested proof locator and its value together.
@@ -1111,13 +1227,14 @@ def _read_github_readme(
         "title": f"GitHub README: {owner}/{repository}",
         "windows": v1._windows(text, terms, radius, max_windows),
         "content_type": "github_readme",
+        "content_scope": "readme",
         "extracted_chars": len(text),
         "source_type": "practitioner_artifact",
         "fallback": "github_readme_api",
         "failed_attempts": 0,
     }
-    base._reserve("read")
     base._record_event("read", result)
+    result["_body"] = text
     return result
 
 
@@ -1171,7 +1288,7 @@ def _read_kaggle_topic(
     for value in [primary, *bodies]:
         if value and value not in sections:
             sections.append(value)
-    text = v1._normalise_text(
+    text = v1._document_text(
         f"Kaggle competition topic: {title}\nAuthor: {author}\n\n"
         + "\n\n".join(sections)
     )
@@ -1183,6 +1300,7 @@ def _read_kaggle_topic(
         "title": title,
         "windows": v1._windows(text, terms, window, max_windows),
         "content_type": "kaggle_competition_topic",
+        "content_scope": "discussion",
         "extracted_chars": len(text),
         "source_type": "practitioner_artifact",
         "fallback": "kaggle_topics_api",
@@ -1191,6 +1309,7 @@ def _read_kaggle_topic(
         "author": author,
     }
     base._record_event("read", result)
+    result["_body"] = text
     return result
 
 
@@ -1242,6 +1361,7 @@ def _read_kaggle_pages(
             "title": "Kaggle official competition pages",
             "windows": windows,
             "content_type": "kaggle_official_pages",
+            "content_scope": "official_pages",
             "extracted_chars": sum(len(str(row.get("content") or "")) for row in pages),
             "source_type": "official",
             "fallback": "none",
@@ -1249,6 +1369,10 @@ def _read_kaggle_pages(
             "official_page_names": sorted(set(names)),
             "competition_id": next(iter(competition_ids), ""),
         }
+        body = "\n\n".join(
+            f"Kaggle official page: {row.get('name') or 'official'}\n{row.get('content') or ''}"
+            for row in pages
+        )
     except Exception as exc:
         errors.append(str(exc))
         # Keep the scope gate usable when the page service is unavailable, but
@@ -1270,6 +1394,7 @@ def _read_kaggle_pages(
                 "title": title,
                 "windows": [f"Kaggle official metadata\n{text[:window * 2]}"],
                 "content_type": "kaggle_official_metadata",
+                "content_scope": "metadata",
                 "extracted_chars": len(text),
                 "source_type": "official",
                 "fallback": "kaggle_competition_metadata",
@@ -1277,16 +1402,54 @@ def _read_kaggle_pages(
                 "official_page_names": [],
                 "competition_id": metadata.get("id") or metadata.get("competitionId") or "",
             }
+            body = f"Kaggle official metadata\n{text}"
         except Exception as fallback_exc:
             raise RuntimeError("; ".join(errors + [str(fallback_exc)]))
     base._record_event("read", result)
+    result["_body"] = body
     return result
 
 
+def _read_local(path: Path) -> dict:
+    with path.open("rb") as handle:
+        raw = handle.read(v1.MAX_DOWNLOAD_BYTES + 1)
+    if len(raw) > v1.MAX_DOWNLOAD_BYTES:
+        raise ValueError("local document exceeds size limit")
+    details = {}
+    if raw.startswith(b"%PDF"):
+        title, text = v1._pdf_text(raw, details)
+        content_type = "pdf"
+    elif path.suffix.casefold() in {".html", ".htm"}:
+        title, text = v1._html_text(raw)
+        content_type = "html"
+    else:
+        title, text = path.name, v1._document_text(raw.decode("utf-8", errors="replace"))
+        content_type = "text"
+    return {
+        "url": str(path), "title": title or path.name,
+        "content_type": content_type, "content_scope": "local_file",
+        "source_type": "local", "truncated": details.get("truncated", False),
+        "pages": details.get("pages", []), "_body": text,
+    }
+
+
 def read_page(
-    url: str, terms: list[str], window: int = 650, max_windows: int = 5
+    url: str, terms: list[str], window: int = 650, max_windows: int = 5,
+    *, refresh: bool = False,
 ) -> dict:
-    if _kaggle_topic_parts(url):
+    policy = _source_policy()
+    ref = _source_ref(url)
+    cached = None if refresh else workspace.load_source(ref)
+    if cached:
+        result = workspace.excerpts(*cached, terms, window, max_windows)
+    elif not url.startswith(("http://", "https://")):
+        path = Path(url).expanduser().resolve()
+        if not path.is_file():
+            raise ValueError("source must be a known REF, HTTP(S) URL, or local file")
+        result = _read_local(path)
+    elif policy == "local_only":
+        raise RuntimeError("web reading is disabled by source_policy=local_only; use a saved source or local file")
+    elif _kaggle_topic_parts(url):
         result = _read_kaggle_topic(url, terms, window, max_windows)
     elif _kaggle_pages_url(url):
         result = _read_kaggle_pages(url, terms, window, max_windows)
@@ -1296,7 +1459,7 @@ def read_page(
             if not pages_url:
                 raise RuntimeError("official competition metadata has no id")
         except Exception:
-            result = v1.read_page(url, terms, window, max_windows)
+            result = v1.read_page(url, terms, window, max_windows, include_body=True)
         else:
             result = _read_kaggle_pages(pages_url, terms, window, max_windows)
             result = dict(result)
@@ -1307,9 +1470,10 @@ def read_page(
         try:
             result = _read_github_readme(url, terms, window, max_windows)
         except Exception:
-            result = v1.read_page(url, terms, window, max_windows)
+            result = v1.read_page(url, terms, window, max_windows, include_body=True)
     else:
-        result = v1.read_page(url, terms, window, max_windows)
+        result = v1.read_page(url, terms, window, max_windows, include_body=True)
+    body = result.pop("_body", "")
     state = _load_scope_state()
     confidence = None
     if state.get("status") == "open":
@@ -1341,6 +1505,13 @@ def read_page(
         )
         result = dict(result)
         result["scope_state"] = _public_scope_state(state)
+    if not cached:
+        result.setdefault("content_scope", "full_text")
+        metadata, text = workspace.save_source(ref, result, body)
+        saved = workspace.excerpts(metadata, text, terms, window, max_windows, cache_hit=False)
+        if "scope_state" in result:
+            saved["scope_state"] = result["scope_state"]
+        return saved
     return result
 
 
@@ -1377,7 +1548,9 @@ def _load_refs() -> dict[str, str]:
     return {
         str(ref): str(url)
         for ref, url in value.items()
-        if str(ref).startswith("REF-") and str(url).startswith(("http://", "https://"))
+        if str(ref).startswith("REF-") and (
+            str(url).startswith(("http://", "https://")) or Path(str(url)).is_absolute()
+        )
     }
 
 
@@ -1416,7 +1589,9 @@ def _save_citations(urls: list[str]) -> None:
 
 
 def _source_ref(url: str) -> str:
-    value = url.strip().split("#", 1)[0]
+    value = url.strip()
+    if value.startswith(("http://", "https://")):
+        value = value.split("#", 1)[0]
     return "REF-" + hashlib.sha256(value.encode("utf-8")).hexdigest()[:16].upper()
 
 
@@ -1440,8 +1615,32 @@ def _ref_search(
     target: str | None,
     artifact: str | None,
     proof: str | None,
+    provider: str | None,
+    *, need: str | None = None, refresh: bool = False,
 ) -> dict:
-    result = search(query, limit, target, artifact, proof)
+    if not query.strip():
+        raise ValueError("search query must be non-empty")
+    if need is not None:
+        workspace.require_need(need)
+    mode = _provider_mode(provider)
+    _source_policy()
+    request = {
+        "query": query.strip(), "limit": limit, "target": target,
+        "artifact": artifact, "proof": proof, "provider": mode,
+    }
+    cached = None if refresh else workspace.load_search(request)
+    cache_hit = cached is not None
+    if cached is None:
+        try:
+            result = search(query, limit, target, artifact, proof, mode)
+        except Exception as exc:
+            if need is not None:
+                workspace.record_search_attempt(
+                    need, query, workspace.search_id(request), error=str(exc)[:240],
+                )
+            raise
+        cached = workspace.save_search(request, result)
+    result = cached["result"]
     rows = []
     discovered = []
     for row in result.get("results", []):
@@ -1462,39 +1661,77 @@ def _ref_search(
         )
     with _ref_lock():
         refs = _load_refs()
+        new_refs = {ref for ref, _ in discovered if ref not in refs}
+        for row in rows:
+            row["seen_before"] = row["ref"] in refs
         refs.update(discovered)
-        _save_refs(dict(list(refs.items())[-256:]))
+        _save_refs(refs)
     public = _hide_urls({key: value for key, value in result.items() if key != "results"})
     public["results"] = rows
+    public.update(
+        cache_hit=cache_hit, search_id=cached["id"], searched_at=cached["searched_at"],
+        new_ref_count=len(new_refs),
+    )
+    if need is not None:
+        public["need"] = need
+        workspace.record_search_attempt(
+            need, query, cached["id"], cache_hit=cache_hit, new_ref_count=len(new_refs),
+        )
     public["next_action"] = (
         "These cards are unread leads, not evidence. Read a matching REF. "
         "Only literal values returned in allowed_citation_urls may be cited."
     )
+    if rows and not new_refs:
+        public["next_action"] += (
+            " All candidate REFs were seen before; revisit saved text or pivot to the remaining gap."
+        )
     return public
 
 
-def _ref_read(ref: str, terms: list[str], window: int) -> dict:
+def _with_citation(result: dict) -> dict:
+    result = dict(result)
+    source = str(result.get("url") or "")
+    if source.startswith(("http://", "https://")):
+        result["citation_url"] = source
+    else:
+        result["citation_path"] = source
+    with _ref_lock():
+        citations = _load_citations()
+        if source.startswith(("http://", "https://")) and source not in citations:
+            citations.append(source)
+            _save_citations(citations)
+        result["allowed_citation_urls"] = citations
+    result["citation_note"] = "Reading admits the source URL/path; check whether its saved excerpt supports each claim."
+    return result
+
+
+def _ref_read(ref: str, terms: list[str], window: int, *, refresh: bool = False) -> dict:
+    source = ref
     with _ref_lock():
         url = _load_refs().get(ref, "")
     if not url:
-        raise ValueError("Read requires a REF returned by Search in this run")
+        if ref.startswith(("http://", "https://")):
+            url = ref
+        elif Path(ref).expanduser().is_file():
+            url = str(Path(ref).expanduser().resolve())
+        else:
+            raise ValueError("Read requires a known REF, HTTP(S) URL, or local file")
+        ref = _source_ref(url)
     try:
-        result = read_page(url, terms, window)
+        result = read_page(url, terms, window, refresh=refresh)
     except Exception as exc:
         base._record_event(
             "ref_read_failed", {"ref": ref, "error_type": type(exc).__name__}
         )
-        raise RuntimeError(f"Read failed for {ref}; choose another REF") from None
+        raise RuntimeError(f"Read failed for {ref}: {str(exc)[:240]}") from None
     result = dict(result)
-    result["citation_url"] = str(result.get("url") or url)
     result["ref"] = ref
     with _ref_lock():
-        citations = _load_citations()
-        if result["citation_url"] not in citations:
-            citations.append(result["citation_url"])
-            _save_citations(citations[-64:])
-        result["allowed_citation_urls"] = citations[-64:]
-    return result
+        refs = _load_refs()
+        refs[ref] = url
+        _save_refs(refs)
+    result["discovery"] = "registered_ref" if source.startswith("REF-") else "direct_input"
+    return _with_citation(result)
 
 
 def main() -> int:
@@ -1507,11 +1744,66 @@ def main() -> int:
     search_parser.add_argument("--target")
     search_parser.add_argument("--artifact", choices=ARTIFACT_TYPES)
     search_parser.add_argument("--proof")
+    search_parser.add_argument(
+        "--provider",
+        choices=SEARCH_PROVIDERS,
+        help=(
+            "Candidate retriever: auto uses AnySearch with direct fallback; "
+            "hybrid merges both. Environment: DEEP_RESEARCH_SEARCH_PROVIDER."
+        ),
+    )
     search_parser.add_argument("--limit", type=int, default=8)
+    search_parser.add_argument("--need", help="Associate this search with a registered Need")
+    search_parser.add_argument("--refresh", action="store_true", help="Bypass saved search results")
     read_parser = sub.add_parser("read")
     read_parser.add_argument("ref")
     read_parser.add_argument("--term", action="append", nargs="+", default=[])
     read_parser.add_argument("--window", type=int, default=650)
+    read_parser.add_argument("--refresh", action="store_true", help="Retrieve a new source snapshot")
+    open_parser = sub.add_parser("open", help="Read saved source lines without network access")
+    open_parser.add_argument("ref")
+    open_parser.add_argument("--start-line", type=int, default=1)
+    open_parser.add_argument("--count", type=int, default=40)
+    open_parser.add_argument("--version", help="Read a historical content_hash")
+    find_parser = sub.add_parser("find", help="Find terms in a saved source")
+    find_parser.add_argument("ref")
+    find_parser.add_argument("--term", action="append", nargs="+", required=True)
+    find_parser.add_argument("--window", type=int, default=650)
+    find_parser.add_argument("--version")
+    evidence_parser = sub.add_parser("evidence", help="Save a claim and verify its verbatim quote")
+    evidence_parser.add_argument("ref")
+    evidence_parser.add_argument("--need", required=True)
+    evidence_parser.add_argument("--claim", required=True)
+    evidence_parser.add_argument("--quote", required=True)
+    evidence_parser.add_argument("--relation", choices=("supports", "refutes", "context"), required=True)
+    evidence_parser.add_argument("--start-line", type=int, default=1)
+    evidence_parser.add_argument("--version")
+    review_parser = sub.add_parser("review", help="Review saved evidence, identical text and mixed relations offline")
+    review_parser.add_argument("--need")
+    review_parser.add_argument("--claim", help="Match an exact saved claim")
+    review_parser.add_argument("--offset", type=int, default=0)
+    review_parser.add_argument("--limit", type=int, default=5)
+    init_parser = sub.add_parser("init", help="Create a durable task contract, or return the matching one")
+    init_parser.add_argument("--deliverable", required=True)
+    init_parser.add_argument("--target", required=True)
+    init_parser.add_argument("--constraint", action="append", default=[])
+    need_parser = sub.add_parser("need", help="Register a checklist item or update its explicit progress")
+    need_parser.add_argument("id")
+    need_parser.add_argument("--question")
+    need_parser.add_argument("--proof")
+    need_parser.add_argument("--priority", type=int, choices=range(1, 6))
+    need_parser.add_argument("--state", choices=("open", "partial", "blocked", "answered"))
+    need_parser.add_argument("--note")
+    need_parser.add_argument("--evidence", action="append", dest="evidence_ids")
+    failure_parser = sub.add_parser("failure", help="Record a failed attempt without closing its Need")
+    failure_parser.add_argument("--need", required=True)
+    failure_parser.add_argument("--action", required=True)
+    failure_parser.add_argument("--reason", required=True)
+    stop_parser = sub.add_parser("stop", help="Save a stop reason; incomplete unless --complete is supplied")
+    stop_parser.add_argument("--reason", required=True)
+    stop_parser.add_argument("--complete", action="store_true")
+    sub.add_parser("resume", help="Reactivate the existing task without clearing progress or failures")
+    sub.add_parser("status", help="Show task progress, remaining Needs, sources and evidence")
     args = parser.parse_args()
     try:
         if args.command == "search":
@@ -1521,11 +1813,49 @@ def main() -> int:
                 args.target,
                 args.artifact,
                 args.proof,
+                args.provider,
+                need=args.need, refresh=args.refresh,
             )
-        else:
+        elif args.command == "read":
             result = _ref_read(
-                args.ref, _join_terms(args.term), max(100, min(args.window, 2_000))
+                args.ref, _join_terms(args.term), max(100, min(args.window, 2_000)),
+                refresh=args.refresh,
             )
+        elif args.command == "open":
+            result = _with_citation(workspace.open_source(
+                args.ref, args.start_line, args.count, args.version
+            ))
+        elif args.command == "find":
+            result = _with_citation(workspace.excerpts(
+                *workspace.require_source(args.ref, args.version),
+                _join_terms(args.term), max(100, min(args.window, 2_000)),
+                intro_if_missing=False,
+            ))
+        elif args.command == "evidence":
+            result = workspace.record_evidence(
+                args.ref, args.need, args.claim, args.quote, args.relation,
+                start_line=args.start_line, version=args.version,
+            )
+        elif args.command == "review":
+            result = workspace.review_evidence(
+                need=args.need, claim=args.claim, offset=args.offset, limit=args.limit,
+            )
+        elif args.command == "init":
+            result = workspace.init_task(args.deliverable, args.target, args.constraint)
+        elif args.command == "need":
+            result = workspace.set_need(
+                args.id, question=args.question, proof=args.proof, priority=args.priority,
+                state=args.state, note=args.note, evidence_ids=args.evidence_ids,
+            )
+        elif args.command == "failure":
+            result = workspace.record_failure(args.need, args.action, args.reason)
+        elif args.command == "stop":
+            result = workspace.stop_task(args.reason, complete=args.complete)
+        elif args.command == "resume":
+            workspace.resume_task()
+            result = workspace.status()
+        else:
+            result = workspace.status()
         print(json.dumps(result, ensure_ascii=False))
         return 0
     except Exception as exc:

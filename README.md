@@ -32,6 +32,10 @@ Deliverable -> Need Map -> Search -> Read -> Pivot -> Synthesis
 - **跨来源综合**：提炼共识、冲突、机制、取舍、适用边界和可行动启发，而非逐篇摘要。
 - **Light / Deep 两种模式**：小问题快速核验，复杂任务覆盖多个 Need 并检查冲突与风险。
 - **可核验输出**：事实、推断和未知项分开，引用只能来自实际读取的正文。
+- **原文保存与回读**：按任务保存正文快照、内容范围和行号/PDF 页码，使用本地 `find/open` 回查；支持历史版本和逐字摘录证据卡。
+- **断点续研**：保存完整 Need 清单、进度、失败尝试和停止原因；恢复时显示剩余缺口，完成一个分支不会结束整项研究。
+- **减少重复检索**：相同查询复用任务内结果，支持显式刷新；记录查询所属 Need，并标出重复来源。
+- **证据回查**：按 Need 或 claim 离线分页查看摘录，提示相同正文与支持/反驳并存的记录，保留来源和历史版本。
 
 ## Competition Research
 
@@ -105,6 +109,15 @@ Limits: missing evidence, uncertainty, and applicability boundaries
 - [`.agents/plugins/marketplace.json`](./.agents/plugins/marketplace.json): Codex marketplace catalog.
 
 The standalone and plugin copies are kept byte-identical.
+
+After editing the standalone skill, sync the distributable resources and check parity:
+
+```bash
+python scripts/sync_skill.py
+python scripts/sync_skill.py --check
+```
+
+Per-run caches and lock files are excluded. For saved-source commands and evidence records, see [workspace and evidence](./skills/deep-research/references/workspace-and-evidence.md).
 
 ## License
 

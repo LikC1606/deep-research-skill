@@ -1,6 +1,6 @@
 # Research Note
 
-这份笔记把“看过网页”变成可复查的 `claim -> excerpt -> source` 链。Light Search 可以只在当前上下文维护表格；Deep Search 只需维护一份 `research.md`，不必拆成多个状态文件。
+这份笔记把“看过网页”变成可复查的 `claim -> excerpt -> source` 链。Light Search 可以只在当前上下文维护表格；Deep Search 用一份 `research.md` 记录综合与推断。脚本自动保存正文和证据卡，初始化后还保存任务进度与缺口，使用方式见 [workspace-and-evidence.md](workspace-and-evidence.md)，无需手工复制这些状态。下列任务状态表适用于未使用结构化进度的场景。
 
 ## 最小模板
 
@@ -17,7 +17,7 @@
 ## Need Map
 | ID | Need | Why it changes the result | Best artifact | Proof | Status |
 | --- | --- | --- | --- | --- | --- |
-| N1 | 一个必须回答的未知项 | 会改变哪个决策 | 原始数据/规范/复盘/代码/复现 | 什么证据才算关闭 | open / partial / closed / blocked |
+| N1 | 一个必须回答的未知项 | 会改变哪个决策 | 原始数据/规范/复盘/代码/复现 | 什么证据才算关闭 | open / partial / answered / blocked |
 
 ## Sources
 | ID | Locator | Role | Useful excerpt/location | Supports | Next lead |

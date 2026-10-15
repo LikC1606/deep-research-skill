@@ -47,12 +47,14 @@ def _blocked_by_policy(url: str) -> bool:
 
 
 def _reserve(kind: str) -> None:
-    """Enforce per-run limits when the pilot sets a run directory."""
-    run_dir = os.environ.get("DRBENCH_RUN_DIR")
+    """Enforce optional fetch/search limits within the current run."""
+    run_dir = os.environ.get("DRBENCH_RUN_DIR") or os.environ.get("DEEP_RESEARCH_RUN_DIR")
     if not run_dir:
         return
     limit_name = "DRBENCH_MAX_SEARCH" if kind == "search" else "DRBENCH_MAX_READ"
-    limit = int(os.environ.get(limit_name, "0"))
+    limit = int(os.environ.get(limit_name) or os.environ.get(
+        f"DEEP_RESEARCH_MAX_{kind.upper()}", "0"
+    ))
     if limit <= 0:
         return
     state_path = Path(run_dir) / ".adapter-counts.json"
