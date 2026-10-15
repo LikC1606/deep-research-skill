@@ -15,6 +15,7 @@ import sys
 import urllib.parse
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 
@@ -64,6 +65,9 @@ def _load_extension(name):
 reporting = _load_extension("reporting")
 citation_graph = _load_extension("citation_graph")
 evaluation = _load_extension("evaluation")
+claim_review = _load_extension("claim_review")
+fixed_corpus = _load_extension("fixed_corpus")
+search_feedback = _load_extension("search_feedback")
 ATOM = {"atom": "http://www.w3.org/2005/Atom"}
 EXTRA_STOPWORDS = {"arxiv", "http", "https", "paper", "report", "site", "study", "www"}
 PRACTITIONER_CONTEXT_RE = re.compile(
@@ -212,19 +216,24 @@ def _practitioner_search_enabled(query: str) -> bool:
 
 
 def _github_query(query: str) -> str:
-    anchor = PRACTITIONER_CONTEXT_RE.sub(" ", query)
-    anchor = PRACTITIONER_OUTCOME_RE.sub(" ", anchor)
-    anchor = PRACTITIONER_ARTIFACT_RE.sub(" ", anchor)
-    anchor = re.sub(r"\bmedals?\b", " ", anchor, flags=re.IGNORECASE)
-    anchor = re.sub(r"\s+", " ", anchor).strip(" -")
-    return f"{anchor} solution".strip()
+    query = _explicit_github_query(query)
+    competition = bool(re.search(r"\b(?:kaggle|competition|hackathon)\b|竞赛|比赛|赛题", query, re.IGNORECASE)
+                       or PRACTITIONER_OUTCOME_RE.search(query))
+    if competition:
+        anchor = PRACTITIONER_CONTEXT_RE.sub(" ", query)
+        anchor = PRACTITIONER_OUTCOME_RE.sub(" ", anchor)
+        anchor = PRACTITIONER_ARTIFACT_RE.sub(" ", anchor)
+        anchor = re.sub(r"\bmedals?\b", " ", anchor, flags=re.IGNORECASE)
+        return f"{_clean_query(anchor)} solution".strip()
+    # Repository search ANDs its words. Adding 'solution' silently excludes
+    # ordinary papers, datasets, tools and their official implementations.
+    return _clean_query(re.sub(r"\b(?:repository|repo|code|implementation)\b|仓库|代码|实现", " ", query, flags=re.IGNORECASE))
 
 
 def _github_repositories(query: str, limit: int) -> list[dict]:
+    github_query = _github_query(query)
     params = {
-        "q": _github_query(query),
-        "sort": "stars",
-        "order": "desc",
+        "q": github_query,
         "per_page": str(min(max(limit, 1), 10)),
     }
     url = "https://api.github.com/search/repositories?" + urllib.parse.urlencode(params)
@@ -234,7 +243,7 @@ def _github_repositories(query: str, limit: int) -> list[dict]:
     except Exception:
         return []
 
-    query_tokens = set(_query_words(query))
+    query_tokens = set(_query_words(github_query)) - {"solution"}
     ranked = []
     for row in rows:
         target = row.get("html_url") or ""
@@ -261,11 +270,11 @@ def _github_repositories(query: str, limit: int) -> list[dict]:
         ranked.append(
             (
                 (
+                    overlap,
                     int(winner_claim),
                     int(placement is not None),
                     -(placement or 10_000),
                     int(outcome_proof),
-                    overlap,
                     stars,
                 ),
                 {
@@ -316,9 +325,9 @@ def _duckduckgo(query: str, limit: int) -> list[dict]:
     return cards
 
 
-def _search_direct(query: str, limit: int = 8) -> dict:
+def _search_direct(query: str, limit: int = 8, target: str | None = None) -> dict:
     web_cards = _duckduckgo(query, max(8, limit))
-    if len(web_cards) < 2:
+    if _recall_gaps(web_cards, query, limit, target):
         web_cards.extend(base._bing(query, max(8, limit)))
     if not v1._is_english_query(query):
         web_cards.extend(base._so360(query, max(8, limit)))
@@ -357,9 +366,9 @@ def _search_direct(query: str, limit: int = 8) -> dict:
             str(card.get(key) or "") for key in ("title", "snippet")
         )
         overlap = len(query_tokens & v1._tokens(searchable))
-        if overlap >= min(3, len(query_tokens)):
+        if overlap >= min(3, len(query_tokens)) or (target and _target_matched(card, target)):
             relevant.append(card)
-    ranked = v1._rank(relevant, query, limit)
+    ranked = _rank_discovery(relevant, query, limit, target)
     if topic_cards:
         ranked = _merge_cards(topic_cards, ranked, limit)
     if "kaggle" in query.casefold() and KAGGLE_OFFICIAL_NEED_RE.search(query):
@@ -422,11 +431,63 @@ def _search_anysearch(query: str, limit: int, artifact: str | None) -> list[dict
     return v1._rank(cards, query, limit)
 
 
+def _discovery_key(card: dict) -> str:
+    url = str(card.get("url") or "").split("#", 1)[0]
+    arxiv = re.search(r"(?:arxiv\.org/(?:abs|pdf|html)/|10\.48550/arxiv\.)(\d{4}\.\d{4,5})", url, re.IGNORECASE)
+    if arxiv:
+        return f"arxiv:{arxiv[1]}"
+    title = " ".join(v1.WORD_RE.findall(str(card.get("title") or "").casefold()))
+    return f"title:{title}" if len(title) >= 32 else f"url:{url}"
+
+
+def _rank_discovery(cards: list[dict], query: str, limit: int, target: str | None = None) -> list[dict]:
+    # Deduplicate representations of a document before truncating the page.
+    # This is a discovery heuristic, not a claim of source independence.
+    ranked = v1._rank(cards, query, len(cards))
+    if target:
+        ranked.sort(key=lambda card: not _target_matched(card, target))
+    selected, seen = [], set()
+    for card in ranked:
+        key = _discovery_key(card)
+        if key in seen:
+            continue
+        seen.add(key)
+        selected.append(card)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def _recall_gaps(cards: list[dict], query: str, limit: int, target: str | None = None) -> list[str]:
+    keys = [_discovery_key(card) for card in cards]
+    gaps = []
+    if len(set(keys)) < min(2, limit):
+        gaps.append("too_few_distinct_documents")
+    if len(keys) - len(set(keys)) >= 2:
+        gaps.append("repeated_document_results")
+    if target and not any(_target_matched(card, target) for card in cards):
+        gaps.append("no_target_match")
+    terms = v1._tokens(re.sub(r"\bsite:\S+", " ", query))
+    if target:
+        terms -= v1._tokens(target)
+    terms -= {"official", "repository", "repo", "code", "implementation", "paper", "writeup", "postmortem"}
+    covered = set().union(*(v1._tokens(" ".join(str(card.get(key) or "") for key in ("title", "snippet")))
+                            for card in cards))
+    if terms - covered:
+        gaps.append("need_terms_missing_from_results")
+    normalized = lambda value: " ".join(re.findall(r"\w+", value.casefold()))
+    if any(not any(normalized(phrase) in normalized(" ".join(str(card.get(key) or "") for key in ("title", "snippet")))
+                       for card in cards) for phrase in re.findall(r'"([^"]+)"', query)):
+        gaps.append("quoted_phrase_missing_from_results")
+    return gaps
+
+
 def _search_base(
     query: str,
     limit: int = 8,
     provider: str | None = None,
     artifact: str | None = None,
+    target: str | None = None,
 ) -> dict:
     policy = _source_policy()
     if policy == "local_only":
@@ -452,20 +513,22 @@ def _search_base(
             if mode == "anysearch":
                 raise RuntimeError(provider_errors[-1]["error"]) from None
 
-    need_direct = mode in {"direct", "hybrid"} or (
-        mode == "auto" and len(anysearch_cards) < min(2, limit)
-    )
+    recall_gaps = _recall_gaps(anysearch_cards, query, limit, target)
+    need_direct = mode in {"direct", "hybrid"} or (mode == "auto" and bool(recall_gaps))
     if need_direct:
-        direct_result = _search_direct(query, limit)
+        direct_result = _search_direct(query, limit, target=target)
         direct_cards = list(direct_result.get("results", []))
         providers_used.append("direct")
 
-    combined = v1._rank(anysearch_cards + direct_cards, query, limit)
+    combined = _rank_discovery(anysearch_cards + direct_cards, query, limit, target)
     result = {
         "query": query,
         "results": combined,
         "provider_mode": mode,
         "providers_used": providers_used,
+        "recall_checks": {"initial_gaps": recall_gaps if mode != "direct" else [],
+                          "remaining_gaps": _recall_gaps(combined, query, limit, target),
+                          "note": "Query overlap and duplicate checks guide discovery only; read sources to assess evidence."},
     }
     if provider_errors:
         result["provider_errors"] = provider_errors
@@ -998,7 +1061,7 @@ def _route_query(query: str, artifact: str) -> str:
         return query if _has_term(query, "benchmark") else f"{query} benchmark results"
     if artifact == "postmortem":
         return query if _has_term(query, "postmortem") else f"{query} postmortem"
-    return query if _has_term(query, "writeup", "lessons learned") else f"{query} participant writeup lessons learned"
+    return query if _has_term(query, "writeup", "lessons learned") else f"{query} writeup"
 
 
 def _explicit_github_query(query: str) -> str:
@@ -1058,7 +1121,7 @@ def search(
         _open_scope(target)
     effective_query = _route_query(query, artifact)
     result = _search_base(
-        effective_query, limit, provider=provider, artifact=artifact
+        effective_query, limit, provider=provider, artifact=artifact, target=target
     )
     if scope_gate:
         official_card = _kaggle_official_card(target, query)
@@ -1621,34 +1684,38 @@ def _hide_urls(value):
     return value
 
 
-def _ref_search(
+def _search_for_need(
     query: str,
     limit: int,
     target: str | None,
     artifact: str | None,
     proof: str | None,
     provider: str | None,
-    *, need: str | None = None, refresh: bool = False,
+    *, need: str | None = None, refresh: bool = False, gap_id: str | None = None, corpus_path: str | None = None,
 ) -> dict:
     if not query.strip():
         raise ValueError("search query must be non-empty")
     if need is not None:
         workspace.require_need(need)
-    mode = _provider_mode(provider)
+    mode = "fixed_corpus" if corpus_path else _provider_mode(provider)
     _source_policy()
     request = {
         "query": query.strip(), "limit": limit, "target": target,
         "artifact": artifact, "proof": proof, "provider": mode,
     }
+    if corpus_path:
+        identity, _ = fixed_corpus.load_case(corpus_path)
+        request.update(corpus_path=str(Path(corpus_path).resolve()), corpus_identity=identity)
     cached = None if refresh else workspace.load_search(request)
     cache_hit = cached is not None
     if cached is None:
         try:
-            result = search(query, limit, target, artifact, proof, mode)
+            result = fixed_corpus.search(workspace, corpus_path, query, limit) if corpus_path else search(
+                query, limit, target, artifact, proof, mode)
         except Exception as exc:
             if need is not None:
                 workspace.record_search_attempt(
-                    need, query, workspace.search_id(request), error=str(exc)[:240],
+                    need, query, workspace.search_id(request), error=str(exc)[:240], gap=gap_id,
                 )
             raise
         cached = workspace.save_search(request, result)
@@ -1659,8 +1726,94 @@ def _ref_search(
     if need is not None:
         public["need"] = need
         workspace.record_search_attempt(
-            need, query, cached["id"], cache_hit=cache_hit, new_ref_count=public["new_ref_count"],
+            need, query, cached["id"], cache_hit=cache_hit, new_ref_count=public["new_ref_count"], gap=gap_id,
         )
+    return public
+
+
+def _ref_search(query, limit, target, artifact, proof, provider, *, need=None, refresh=False, gap=None, corpus_path=None):
+    if gap is None:
+        return _search_for_need(query, limit, target, artifact, proof, provider, need=need, refresh=refresh,
+                                corpus_path=corpus_path)
+    need, attempt = claim_review.reserve_gap_search(workspace, gap, query, need)
+    try:
+        result = _search_for_need(query, limit, target, artifact, proof, provider, need=need, refresh=refresh,
+                                  gap_id=gap, corpus_path=corpus_path)
+    except Exception as exc:
+        claim_review.finish_gap_search(workspace, gap, attempt, error=exc)
+        raise
+    result.update(claim_review.finish_gap_search(workspace, gap, attempt, result=result))
+    return result
+
+
+def _search_batch(plan_path: str, limit: int = 5, provider: str | None = None, *,
+                  workers: int = 3, refresh: bool = False) -> dict:
+    if workers not in (1, 2, 3) or not 1 <= limit <= 12:
+        raise ValueError("search-batch requires 1-3 workers and 1-12 results per query")
+    with Path(plan_path).open("rb") as stream:
+        raw = stream.read(65_537)
+    if len(raw) > 65_536:
+        raise ValueError("search plan exceeds 65536 bytes")
+    plan = json.loads(raw)
+    feedback = None
+    if isinstance(plan, dict) and "feedback" in plan:
+        if set(plan) != {"feedback"}:
+            raise ValueError("use either searches or feedback in a search plan")
+        plan = search_feedback.build_plan(workspace, plan["feedback"], _source_policy(), ARTIFACT_TYPES)
+        feedback = plan["feedback"]
+    searches = plan.get("searches") if isinstance(plan, dict) else None
+    if not isinstance(searches, list) or not 1 <= len(searches) <= 6:
+        raise ValueError("search plan must contain 1-6 searches")
+    items, seen = [], set()
+    for row in searches:
+        if not isinstance(row, dict) or set(row) - {"query", "reason", "need", "target", "artifact", "proof"}:
+            raise ValueError("each search accepts query, reason, optional need, and target/artifact/proof")
+        if any(not isinstance(row.get(key), str) or not row[key].strip() for key in ("query", "reason")):
+            raise ValueError("each search requires a non-empty query and a short purpose in reason")
+        item = {key: value.strip() if isinstance(value, str) else value for key, value in row.items()}
+        route = search_feedback.route_fields(item, ARTIFACT_TYPES)
+        item.update(route)
+        identity = (item["query"], tuple(route.values()))
+        if identity in seen:
+            raise ValueError("duplicate query and route in search plan; reuse its results instead")
+        seen.add(identity)
+        if "need" in item:
+            if not isinstance(item["need"], str) or not item["need"]:
+                raise ValueError("need must be a non-empty registered Need ID")
+            workspace.require_need(item["need"])
+        items.append(item)
+    mode = _provider_mode(provider)
+    _source_policy()
+    # Competition discovery shares mutable scope state within the run.
+    if any("kaggle" in f"{item['query']} {item.get('target', '')}".casefold()
+           or _practitioner_search_enabled(f"{item['query']} {item.get('target', '')}") for item in items):
+        workers = 1
+    workers = min(workers, len(items))
+
+    def retrieve(item):
+        try:
+            result = _ref_search(item["query"], limit, item.get("target"), item.get("artifact"), item.get("proof"), mode,
+                                 need=item.get("need"), refresh=refresh)
+            return {**item, "status": "ok" if result.get("results") else "empty", "result": result}
+        except Exception as exc:
+            return {**item, "status": "error", "error": str(exc)[:240]}
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        results = list(executor.map(retrieve, items))
+    failed = sum(row["status"] == "error" for row in results)
+    public = _hide_urls({
+        "status": "failed" if failed == len(items) else "partial" if failed else "complete",
+        "query_count": len(items), "completed": len(items) - failed, "failed": failed,
+        "empty": sum(row["status"] == "empty" for row in results),
+        "workers": workers, "results": results,
+        "next_action": "Read promising REFs, then plan follow-up queries from the remaining gaps. "
+                       "Completed searches and summaries do not prove that a Need is answered.",
+        **({"search_feedback": feedback} if feedback is not None else {}),
+    })
+    record = workspace.save_search({"operation": "search-batch", "searches": items,
+                                    "limit": limit, "provider": mode,
+                                    **({"feedback": feedback} if feedback is not None else {})}, public)
+    public["batch_id"] = record["id"]
     return public
 
 
@@ -1697,6 +1850,11 @@ def _public_leads(result: dict) -> dict:
         "These cards are unread leads, not evidence. Read a matching REF. "
         "Only literal values returned in allowed_citation_urls may be cited."
     )
+    if public.get("recall_checks", {}).get("remaining_gaps"):
+        public["next_action"] += (
+            " Recall gaps remain. Keep the problem's subject in the next query, use one missing concept "
+            "or an exact domain phrase, and inspect a primary source; do not treat this page as sufficient coverage."
+        )
     if rows and not new_refs:
         public["next_action"] += (
             " All candidate REFs were seen before; revisit saved text or pivot to the remaining gap."
@@ -1806,12 +1964,21 @@ def main() -> int:
     )
     search_parser.add_argument("--limit", type=int, default=8)
     search_parser.add_argument("--need", help="Associate this search with a registered Need")
+    search_parser.add_argument("--gap", help="Search for a reviewed claim gap within its explicit bounds")
+    search_parser.add_argument("--corpus", help="Search only a case-pack manifest with local FTS5 and measured budgets")
     search_parser.add_argument("--refresh", action="store_true", help="Bypass saved search results")
+    batch_parser = sub.add_parser("search-batch", help="Run independent query/reason searches with bounded concurrency")
+    batch_parser.add_argument("plan", help="JSON object with 1-6 searches or saved-source feedback")
+    batch_parser.add_argument("--limit", type=int, choices=range(1, 13), default=5)
+    batch_parser.add_argument("--workers", type=int, choices=(1, 2, 3), default=3)
+    batch_parser.add_argument("--provider", choices=SEARCH_PROVIDERS)
+    batch_parser.add_argument("--refresh", action="store_true")
     read_parser = sub.add_parser("read")
     read_parser.add_argument("ref")
     read_parser.add_argument("--term", action="append", nargs="+", default=[])
     read_parser.add_argument("--window", type=int, default=650)
     read_parser.add_argument("--refresh", action="store_true", help="Retrieve a new source snapshot")
+    read_parser.add_argument("--corpus", help="Read a fixed-corpus source ID or REF under the case budget")
     open_parser = sub.add_parser("open", help="Read saved source lines without network access")
     open_parser.add_argument("ref")
     open_parser.add_argument("--start-line", type=int, default=1)
@@ -1864,6 +2031,24 @@ def main() -> int:
     audit_parser.add_argument("report")
     audit_parser.add_argument("--offset", type=int, default=0)
     audit_parser.add_argument("--limit", type=int, default=10)
+    claims_parser = sub.add_parser("claims", help="Prepare, save or inspect explicit per-claim semantic judgments")
+    claims_parser.add_argument("report")
+    claims_parser.add_argument("--judgments")
+    claims_parser.add_argument("--offset", type=int, default=0)
+    claims_parser.add_argument("--limit", type=int, default=5)
+    gap_parser = sub.add_parser("gap", help="Create or inspect a bounded follow-up for a reviewed claim")
+    gap_parser.add_argument("report")
+    gap_parser.add_argument("--claim", required=True)
+    gap_parser.add_argument("--need", required=True)
+    gap_parser.add_argument("--max-attempts", type=int, default=3)
+    outcome_parser = sub.add_parser("gap-result", help="Record new evidence, no progress, resolution or a stop")
+    outcome_parser.add_argument("gap")
+    outcome_parser.add_argument("--outcome", choices=("progress", "no_progress", "resolved", "stop"), required=True)
+    outcome_parser.add_argument("--reason", required=True)
+    outcome_parser.add_argument("--evidence", action="append", default=[])
+    case_parser = sub.add_parser("case-pack", help="Export researcher-only task and corpus without evaluator references")
+    case_parser.add_argument("case")
+    case_parser.add_argument("--output", required=True)
     compare_parser = sub.add_parser("compare", help="Prepare a blind comparison using a fixed case and two reports")
     compare_parser.add_argument("case")
     compare_parser.add_argument("--a", required=True)
@@ -1906,13 +2091,18 @@ def main() -> int:
                 args.artifact,
                 args.proof,
                 args.provider,
-                need=args.need, refresh=args.refresh,
+                need=args.need, refresh=args.refresh, gap=args.gap, corpus_path=args.corpus,
             )
+        elif args.command == "search-batch":
+            result = _search_batch(args.plan, args.limit, args.provider, workers=args.workers, refresh=args.refresh)
         elif args.command == "read":
-            result = _ref_read(
-                args.ref, _join_terms(args.term), max(100, min(args.window, 2_000)),
-                refresh=args.refresh,
-            )
+            if args.corpus:
+                with _ref_lock():
+                    source = _load_refs().get(args.ref, args.ref)
+                result = fixed_corpus.read(workspace, args.corpus, source, lambda value: _ref_read(
+                    value, _join_terms(args.term), max(100, min(args.window, 2_000)), refresh=True))
+            else:
+                result = _ref_read(args.ref, _join_terms(args.term), max(100, min(args.window, 2_000)), refresh=args.refresh)
         elif args.command == "open":
             result = _with_citation(workspace.open_source(
                 args.ref, args.start_line, args.count, args.version
@@ -1947,9 +2137,19 @@ def main() -> int:
             result = reporting.packet(workspace, args.section, offset=args.offset, limit=args.limit)
         elif args.command == "audit":
             result = reporting.audit_report(workspace, args.report, offset=args.offset, limit=args.limit)
+        elif args.command == "claims":
+            result = claim_review.claims(workspace, reporting, args.report, judgments_path=args.judgments,
+                                         offset=args.offset, limit=args.limit)
+        elif args.command == "gap":
+            result = claim_review.new_gap(workspace, reporting, args.report, args.claim, args.need,
+                                          max_attempts=args.max_attempts)
+        elif args.command == "gap-result":
+            result = claim_review.gap_result(workspace, args.gap, args.outcome, args.reason, args.evidence)
         elif args.command == "compare":
             result = evaluation.prepare(workspace, reporting, args.case, args.a, args.b, args.output,
-                                         seed=args.seed, a_run=args.a_run, b_run=args.b_run)
+                                         seed=args.seed, a_run=args.a_run, b_run=args.b_run, semantic_review=claim_review)
+        elif args.command == "case-pack":
+            result = evaluation.pack_case(workspace, args.case, args.output)
         elif args.command == "score":
             result = evaluation.score(workspace, args.comparison, args.judgments)
         elif args.command == "init":
@@ -1969,7 +2169,7 @@ def main() -> int:
         else:
             result = workspace.status()
         print(json.dumps(result, ensure_ascii=False))
-        return 0
+        return 1 if args.command == "search-batch" and result["status"] == "failed" else 0
     except Exception as exc:
         print(json.dumps({"error": str(exc)}, ensure_ascii=False))
         return 1

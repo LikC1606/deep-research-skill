@@ -1,0 +1,8 @@
+{
+  "criteria": [
+    {"id": "R1", "weight": 2, "requirement": "识别当前单价及版本，拒绝教程旧单价", "reference": "v3 自 2026-09-01 生效；请求 0.12 USD/1000 次，存储 0.06 USD/GiB-day。S5 标题不更新其旧引用；token、GB-month 不可混用。", "source_ids": ["S1", "S2", "S5"], "evidence_groups": [["S1"], ["S2"], ["S5"]]},
+    {"id": "R2", "weight": 2, "requirement": "合并价格与负载进行可复算计算", "reference": "20000/1000*0.12=2.40；10*30*0.06=18.00；合计20.40美元，未税且不计折扣/抵扣金。仅引用单价或仅引用负载均不足以支持总额。", "source_ids": ["S1", "S3"], "evidence_groups": [["S1"], ["S3"]]},
+    {"id": "R3", "weight": 1, "requirement": "逐项判断复合句的支持范围", "reference": "JSONL 由 S4 支持，但 S4 不能支持当前价格、总价或地区承诺；旧版 CSV 不能替代 v3 格式。", "source_ids": ["S2", "S4"], "evidence_groups": [["S4"]]},
+    {"id": "R4", "weight": 2, "requirement": "不将未提供地区信息变成否定结论", "reference": "当前语料不足以确认数据存放地区；不能由未记载推断没有地区选项，也不能由全球可用推断全球分区存放。", "source_ids": ["S4", "S5"], "evidence_groups": [["S1"], ["S2"], ["S3"], ["S4"], ["S5"]]}
+  ]
+}

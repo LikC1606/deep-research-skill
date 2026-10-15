@@ -176,6 +176,71 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(scored["preferred_input"], "tie")
         self.assertTrue((output / "scores.json").exists())
 
+    def add_rubric(self):
+        case = json.loads(self.case.read_text())
+        case["evaluator"] = "private.json"
+        self.case.write_text(json.dumps(case))
+        (self.folder / "private.json").write_text(json.dumps({"criteria": [
+            {"id": "R1", "weight": 2, "requirement": "Check causal limits",
+             "reference": "PRIVATE ANSWER: control absent", "source_ids": ["S1"]}]}))
+
+    def test_researcher_export_contains_only_task_and_allowlisted_corpus(self):
+        self.add_rubric()
+        output = self.folder / "researcher"
+        evaluation.pack_case(ws, str(self.case), str(output))
+        public = json.loads((output / "case.json").read_text())
+        self.assertEqual(set(public), {"id", "question", "budget", "sources"})
+        self.assertEqual(sorted(str(p.relative_to(output)) for p in output.rglob("*") if p.is_file()),
+                         ["case.json", "corpus/S1.txt"])
+        self.assertEqual((output / public["sources"][0]["path"]).read_bytes(), (self.folder / "source.txt").read_bytes())
+        self.assertNotIn("PRIVATE ANSWER", (output / "case.json").read_text())
+        case = json.loads(self.case.read_text())
+        case["sources"][0]["path"] = "private.json"
+        self.case.write_text(json.dumps(case))
+        with self.assertRaisesRegex(ValueError, "evaluator reference"):
+            evaluation.pack_case(ws, str(self.case), str(self.folder / "bad"))
+
+    def test_task_criteria_require_exact_items_quotes_sources_and_packet_hash(self):
+        self.add_rubric()
+        directory = self.prepare()
+        valid = self.judgments(directory)
+        packet = json.loads((directory / "blind.json").read_text())
+        for label, rating in valid["reports"].items():
+            rating["criteria"]["R1"] = {"status": "met", "reason": "Explicitly reviewed.",
+                                          "report_quote": packet["reports"][label]["text"], "source_ids": ["S1"]}
+        for mutate in (lambda x: x["reports"]["A"]["criteria"].clear(),
+                       lambda x: x["reports"]["A"]["criteria"].update(extra={}),
+                       lambda x: x["reports"]["A"]["criteria"]["R1"].update(report_quote="invented text"),
+                       lambda x: x["reports"]["A"]["criteria"]["R1"].update(source_ids=["unknown"])):
+            invalid = copy.deepcopy(valid)
+            mutate(invalid)
+            with self.assertRaises(ValueError):
+                self.score(directory, invalid)
+        result = self.score(directory, valid)
+        self.assertEqual(result["reports"]["A"]["rubric_summary"]["score_on_assessed"], 1)
+        valid["reports"]["A"]["criteria"]["R1"]["status"] = "not_assessable"
+        result = self.score(directory, valid)
+        self.assertIsNone(result["reports"]["A"]["rubric_summary"]["score_on_assessed"])
+        packet["task_rubric"][0]["reference"] = "tampered"
+        (directory / "blind.json").write_text(json.dumps(packet))
+        with self.assertRaisesRegex(ValueError, "hash"):
+            self.score(directory, valid)
+
+    def test_duplicate_json_fields_are_rejected(self):
+        self.case.write_text('{"id":"first", "id":"second"}')
+        with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
+            self.prepare()
+
+    def test_authored_bilingual_cases_export_without_reference_answers(self):
+        for name in ("pricing-hard-zh", "trial-hard-en"):
+            case = SCRIPT.parent.parent / "evals" / name / "case.json"
+            output = self.folder / name
+            evaluation.pack_case(ws, str(case), str(output))
+            public = json.loads((output / "case.json").read_text())
+            self.assertEqual(len(public["sources"]), 5)
+            self.assertNotIn("evaluator", public)
+            self.assertNotIn("checklist", public)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -119,6 +119,76 @@ class SourceWorkspaceTests(unittest.TestCase):
         record = workspace.record_evidence(first["ref"], "N1", "Trial size", "12 samples", "supports")
         self.assertEqual(record["locator"]["start_line"], 2)
 
+    def test_html_links_are_findable_without_reading_their_targets(self):
+        url = "https://example.org/study"
+        repository = "https://github.com/author/project"
+        html = (
+            b'<title>Study</title><nav><a href="https://example.org/menu">Menu</a></nav>'
+            b'<main><h1>Implementation</h1><a href="https://github.com/author/project">'
+            b'<strong>Code</strong></a></main>'
+        )
+        with mock.patch.object(research.v1, "_fetch_bytes", return_value=(html, url, "text/html")) as fetch:
+            result = research._ref_read(url, [], 100)
+            found = workspace.excerpts(*workspace.require_source(result["ref"]),
+                                       ["github.com"], intro_if_missing=False)
+        fetch.assert_called_once_with(url)
+        self.assertIn(f"Code ({repository})", found["windows"][0])
+        self.assertNotIn("https://example.org/menu", workspace.open_source(result["ref"])["text"])
+        self.assertEqual(result["allowed_citation_urls"], [url])
+        self.assertEqual(workspace.status()["sources_read"], 1)
+
+    def test_html_relative_links_use_fetched_url_and_document_base(self):
+        url = "https://example.org/study"
+        fetched_url = "https://authors.example/projects/method/paper.html"
+        cases = [
+            (b"", "https://authors.example/projects/code/"),
+            (b'<base href="/releases/v2/paper/">', "https://authors.example/releases/v2/code/"),
+        ]
+        for base_tag, expected in cases:
+            with self.subTest(base=base_tag):
+                html = (
+                    b"<head><title>Study</title>" + base_tag + b"</head>"
+                    b'<main><a href="../code/">Implementation</a>'
+                    b'<a href="//github.com/author/project">GitHub</a></main>'
+                )
+                with mock.patch.object(research.v1, "_fetch_bytes", return_value=(
+                    html, fetched_url, "text/html"
+                )) as fetch:
+                    result = research._ref_read(url, [], 100, refresh=True)
+                fetch.assert_called_once_with(url)
+                text = workspace.open_source(result["ref"])["text"]
+                self.assertIn(f"Implementation ({expected})", text)
+                self.assertIn("GitHub (https://github.com/author/project)", text)
+
+    def test_html_non_web_and_invalid_links_keep_only_their_labels(self):
+        url = "https://example.org/study"
+        html = (
+            b'<main><a href="#methods">Methods</a><a href="">Empty</a>'
+            b'<a href="mailto:author@example.org">Email</a>'
+            b'<a href="javascript:void(0)">Script</a><a href="file:///tmp/code">File</a>'
+            b'<a href="data:text/plain,code">Data</a>'
+            b'<a href="https://[broken">Broken</a></main>'
+        )
+        with mock.patch.object(research.v1, "_fetch_bytes", return_value=(html, url, "text/html")):
+            result = research._ref_read(url, [], 100)
+        self.assertEqual(workspace.open_source(result["ref"])["text"].splitlines(),
+                         ["Methods", "Empty", "Email", "Script", "File", "Data", "Broken"])
+
+    def test_local_html_preserves_absolute_links_without_guessing_relative_urls(self):
+        path = self.root / "study.html"
+        path.write_text(
+            '<main><a href="https://github.com/author/project">Code</a>'
+            '<a href="../paper.pdf">Paper</a></main>'
+        )
+        with mock.patch.object(research.v1, "_fetch_bytes") as fetch:
+            result = research._ref_read(str(path), [], 100)
+        fetch.assert_not_called()
+        text = workspace.open_source(result["ref"])["text"]
+        self.assertIn("Code (https://github.com/author/project)", text)
+        self.assertEqual(text.splitlines()[-1], "Paper")
+        self.assertEqual(result["content_scope"], "local_file")
+        self.assertEqual(result["allowed_citation_urls"], [])
+
     def test_github_file_reads_raw_text_before_html(self):
         url = "https://github.com/example/project/blob/main/README.md"
         raw_url = "https://raw.githubusercontent.com/example/project/main/README.md"
@@ -324,6 +394,69 @@ class SourceWorkspaceTests(unittest.TestCase):
         record = workspace.record_evidence(result["ref"], "N1", "Trial size", "12 samples", "supports")
         self.assertEqual(record["locator"]["pages"], [2])
         self.assertEqual(len(result["pages"]), 2)
+
+    def test_pdf_annotation_links_are_findable_on_their_page_without_following(self):
+        url = "https://example.org/paper.pdf"
+        repository = "https://github.com/author/project"
+        with research.v1.pymupdf.open() as pdf:
+            pdf.new_page().insert_text((72, 72), "First page introduction.")
+            page = pdf.new_page()
+            page.insert_text((72, 72), "Implementation: Code is available.")
+            for uri in [repository, repository, "mailto:author@example.org", "https://[broken"]:
+                page.insert_link({"kind": research.v1.pymupdf.LINK_URI,
+                                  "from": research.v1.pymupdf.Rect(72, 55, 200, 75), "uri": uri})
+            page.insert_link({"kind": research.v1.pymupdf.LINK_GOTO,
+                              "from": research.v1.pymupdf.Rect(72, 80, 200, 100), "page": 0})
+            raw = pdf.tobytes()
+        with mock.patch.object(research.v1, "_fetch_bytes", return_value=(
+            raw, url, "application/pdf"
+        )) as fetch:
+            result = research._ref_read(url, [], 100)
+            found = workspace.excerpts(*workspace.require_source(result["ref"]),
+                                       ["github.com"], window=30, intro_if_missing=False)
+        fetch.assert_called_once_with(url)
+        text = workspace.require_source(result["ref"])[1]
+        self.assertIn(f"[PDF link] {repository}", text)
+        self.assertEqual(text.count(repository), 1)
+        self.assertNotIn("mailto:", text)
+        self.assertNotIn("https://[broken", text)
+        self.assertIn(repository, found["windows"][0])
+        self.assertEqual(found["locators"][0]["pages"], [2])
+        self.assertEqual(result["allowed_citation_urls"], [url])
+        self.assertEqual(workspace.status()["sources_read"], 1)
+
+    def test_local_pdf_annotation_links_are_available_offline(self):
+        path = self.root / "paper.pdf"
+        with research.v1.pymupdf.open() as pdf:
+            page = pdf.new_page()
+            page.insert_text((72, 72), "Project page")
+            page.insert_link({"kind": research.v1.pymupdf.LINK_URI,
+                              "from": research.v1.pymupdf.Rect(72, 55, 200, 75),
+                              "uri": "https://author.example/project"})
+            pdf.save(path)
+        with mock.patch.dict(os.environ, {"DEEP_RESEARCH_SOURCE_POLICY": "local_only"}), \
+                mock.patch.object(research.v1, "_fetch_bytes") as fetch:
+            result = research._ref_read(str(path), [], 100)
+        fetch.assert_not_called()
+        self.assertIn("[PDF link] https://author.example/project",
+                      workspace.open_source(result["ref"])["text"])
+        self.assertEqual(result["content_scope"], "local_file")
+        self.assertEqual(result["allowed_citation_urls"], [])
+
+    def test_pdf_annotation_links_obey_the_text_limit(self):
+        with research.v1.pymupdf.open() as pdf:
+            page = pdf.new_page()
+            page.insert_text((72, 72), "Code")
+            page.insert_link({"kind": research.v1.pymupdf.LINK_URI,
+                              "from": research.v1.pymupdf.Rect(72, 55, 200, 75),
+                              "uri": "https://github.com/author/project"})
+            raw = pdf.tobytes()
+        details = {}
+        with mock.patch.object(research.v1, "MAX_TEXT_CHARS", 30):
+            _, text = research.v1._pdf_text(raw, details)
+        self.assertEqual(len(text), 30)
+        self.assertTrue(details["truncated"])
+        self.assertEqual(details["pages"], [{"page": 1, "start_char": 0, "end_char": 30}])
 
     def test_find_has_no_false_intro_result_when_term_is_missing(self):
         result = self.read_network()

@@ -1,0 +1,4 @@
+Lumen pilot protocol, 2026-04-01.
+This is an unblinded randomized single-site feasibility pilot with a six-week visit.
+Feasibility is the primary objective. The protocol does not prespecify a confirmatory efficacy test.
+Missing follow-up observations are excluded from the descriptive analysis; no imputation is planned.

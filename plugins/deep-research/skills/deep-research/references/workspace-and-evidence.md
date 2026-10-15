@@ -27,6 +27,10 @@
 
 原文快照指提取后的文本，不是网页原始 HTML 或 PDF 二进制。元数据包括来源、读取时间、内容 hash、内容范围、是否截断、正文位置；PDF 还保存页码对应的字符区间。`content_hash` 只标识正文，用于相同文本去重；`snapshot_id` 同时区分正文及其来源、范围、截断标记和页码等元数据。历史快照保留，刷新不会覆盖旧证据使用的正文或元数据；正文与元数据均相同的重复读取复用快照标识，当前读取时间仍在 metadata.json 更新。
 
+HTML 正文保留 HTTP(S) 链接的名称和地址；相对地址按跳转后的页面地址及 HTML 的 `base href` 解析。查找作者代码或附件时，可先用 `find REF --term github.com` 或正文中的链接名称定位，再对目标 URL 单独 `read`。链接只是线索，父页面的 Read 不会读取链接目标，也不会将其加入引用白名单。旧快照不会自动补回地址，确需重新提取时使用 `read REF --refresh`。
+
+PDF 的 HTTP(S) 链接注释以 `[PDF link] URL` 保留在对应页的快照中，同页重复注释只记一次，并计入正文长度上限。这是可继续读取的地址，不是论文原句；`find` 返回其所在页码，目标内容仍须单独 Read。本地 PDF 也可离线提取这些地址。
+
 按章节导出证据包、修订提纲、追踪论文前后引用、审计报告或进行固定语料成对评估时，读取 [reporting-and-evaluation.md](reporting-and-evaluation.md)。这些功能共用当前任务目录，不改变来源与语义判断的边界。
 
 ## 任务进度与恢复
@@ -81,6 +85,33 @@ research.py search "B storage pricing" --need N2 --refresh
 `new_ref_count` 统计本次候选中此前未在任务内登记的 REF；各候选的 `seen_before` 标出是否重复出现。零新增只是换方向或回读的提示，不证明没有新证据；相同 URL 的更新内容可用 `read --refresh` 检查。缓存结果仍为 `unread_lead` 且不可引用，必须 Read 正文。
 
 `local_only` 允许回看已有搜索缓存，仍拒绝新联网搜索和 `search --refresh`。缓存保存的是历史线索，不能用它声称检索结果为当前最新。
+
+## 批量发现
+
+需要多条独立搜索时，先按待补缺口写一个 JSON 查询计划。`reason` 是简短的检索目的，不是推理过程。示例 `plan.json`：
+
+```json
+{
+  "searches": [
+    {"query": "citation evaluation entailment implementation", "reason": "找可回读的引用支持评估代码"},
+    {"query": "citation evaluation human agreement error analysis", "reason": "找评估方法的人工对照与失败情况"}
+  ]
+}
+```
+
+```bash
+research.py search-batch plan.json --workers 2 --limit 5
+```
+
+每条接受 `query`、`reason` 和可选的已登记 `need`。已知对象、需要特定材料时，可在该条同时填写 `target`、`artifact`、`proof`，沿用 `search` 的定向检索通道；这三个字段须一起出现。未知方法名时不预设 Target，找到候选后再定向搜索或直接 Read 核验。批次只执行计划，不调用另一个模型生成查询；简单查询仍用原来的 `search`。
+
+已读正文可作为下一轮查询的输入：以顶层 `feedback` 代替 `searches`，填写原始查询、仍缺材料和带逐字摘录的相关/导航/误导段落，由工具核对术语出处并生成小批查询。格式与生成规则见 [search-feedback.md](search-feedback.md#执行反馈计划)。反馈及实际使用的历史快照保存在该批次搜索缓存中；原始查询仍保留，新候选仍需 Read。
+
+计划限 1-6 条不同检索请求、64 KiB，最多 3 路并发，每条最多 12 个候选。查询文本相同但 Target、材料类型或 proof 不同的请求会分别保留、缓存；同一路由的重复查询仍拒绝。执行前校验整个计划；查询或 Target 涉及共享竞赛 scope 时按顺序执行，返回实际 `workers`。复用现有 provider、搜索预算、缓存和来源登记；缓存命中不额外消耗搜索额度。`--provider` 和 `--refresh` 作用于整个批次。
+
+`results` 按计划顺序逐项保留 `reason`、REF、缓存信息或失败原因；`status` 为 `ok | empty | error`。顶层 `completed` 只表示检索调用成功，`empty` 单列空结果，`failed` 单列错误；顶层状态为 `complete | partial | failed`，全部失败时 CLI 返回非零状态。`batch_id` 对应 `searches/<batch_id>.json`，保存查询目的及每次搜索的 ID，原始候选仍在各查询自己的缓存中。失败或空结果不会关闭 Need；成功项仍为 `unread_lead`，须 Read 后才能引用。先读取有价值的命中，再根据剩余缺口规划后续查询。
+
+此处借鉴 OpenAI 官方 research_bot 的 [query/reason 计划](https://github.com/openai/openai-agents-python/blob/main/examples/research_bot/agents/planner_agent.py)和[并发执行及失败统计](https://github.com/openai/openai-agents-python/blob/main/examples/research_bot/manager.py)。本地实现继续保留原文与引用核验，查询数和报告长度由实际任务决定。
 
 ## 阅读与回查
 

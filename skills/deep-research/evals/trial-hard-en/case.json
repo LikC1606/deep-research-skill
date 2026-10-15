@@ -1,0 +1,18 @@
+{
+  "id": "trial-hard-en",
+  "question": "Using only the supplied documents, assess the six-week Lumen pilot: reconcile participant counts, calculate the between-group difference in mean change, and explain what can be concluded about efficacy and adverse events. Cite each factual premise and distinguish calculations from clinical conclusions.",
+  "budget": {"network_calls": 0, "search_calls": 5, "source_reads": 5},
+  "checklist": [
+    {"id": "N1", "requirement": "Reconcile interim and final population sizes"},
+    {"id": "N2", "requirement": "Calculate the contrast with units and direction"},
+    {"id": "N3", "requirement": "Respect efficacy and safety evidence limits"}
+  ],
+  "sources": [
+    {"id": "S1", "path": "final.txt"},
+    {"id": "S2", "path": "protocol.txt"},
+    {"id": "S3", "path": "interim.txt"},
+    {"id": "S4", "path": "appendix.txt"},
+    {"id": "S5", "path": "press.txt"}
+  ],
+  "evaluator": "evaluator.json"
+}

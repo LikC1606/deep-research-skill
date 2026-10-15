@@ -23,10 +23,10 @@ def root() -> Path:
     return Path(run or os.getcwd()) / ".deep-research"
 
 
-def _source_dir(ref: str) -> Path:
+def _source_dir(ref: str, *, run_root: Path | None = None) -> Path:
     if not REF_RE.fullmatch(ref):
         raise ValueError("invalid source REF")
-    return root() / "sources" / ref
+    return (run_root if run_root is not None else root()) / "sources" / ref
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -100,8 +100,8 @@ def save_source(ref: str, result: dict, text: str) -> tuple[dict, str]:
     return metadata, text
 
 
-def load_source(ref: str, version: str | None = None) -> tuple[dict, str] | None:
-    folder = _source_dir(ref)
+def load_source(ref: str, version: str | None = None, *, run_root: Path | None = None) -> tuple[dict, str] | None:
+    folder = _source_dir(ref, run_root=run_root)
     if version is not None and not re.fullmatch(r"[0-9a-f]{64}", version):
         raise ValueError("version must be a source snapshot_id or legacy content_hash")
     path = folder / (f"{version}.json" if version else "metadata.json")
@@ -165,8 +165,8 @@ def excerpts(
     }
 
 
-def require_source(ref: str, version: str | None = None) -> tuple[dict, str]:
-    source = load_source(ref, version)
+def require_source(ref: str, version: str | None = None, *, run_root: Path | None = None) -> tuple[dict, str]:
+    source = load_source(ref, version, run_root=run_root)
     if source is None:
         raise ValueError("source snapshot not found in this run; read it first")
     return source
@@ -446,7 +446,7 @@ def save_search(request: dict, result: dict) -> dict:
 
 def record_search_attempt(
     need: str, query: str, key: str, *, cache_hit: bool = False,
-    new_ref_count: int = 0, error: str | None = None,
+    new_ref_count: int = 0, error: str | None = None, gap: str | None = None,
 ) -> dict:
     # An in-flight request may finish after stop; retain its outcome without
     # reopening the task or changing any Need state.
@@ -459,6 +459,10 @@ def record_search_attempt(
             "cache_hit": cache_hit, "new_ref_count": new_ref_count,
             "at": datetime.now(timezone.utc).isoformat(),
         }
+        if gap is not None:
+            if task.get("review_gaps", {}).get(gap, {}).get("need") != need:
+                raise ValueError("search gap must belong to the same Need")
+            record["gap_id"] = gap
         if error is not None:
             record["error"] = error
             task["failures"].append({
@@ -547,10 +551,15 @@ def status() -> dict:
     if task is None:
         return summary
     summary["task"] = {
-        **{key: value for key, value in task.items() if key not in {"failures", "searches"}},
+        **{key: value for key, value in task.items() if key not in {"failures", "searches", "review_gaps"}},
         "failure_count": len(task["failures"]), "recent_failures": task["failures"][-10:],
         "search_count": len(task.get("searches", [])),
         "recent_searches": task.get("searches", [])[-10:],
+        "review_gap_count": len(task.get("review_gaps", {})),
+        "review_gap_states": dict(Counter(gap["state"] for gap in task.get("review_gaps", {}).values())),
+        "recent_review_gaps": [{"id": gap["id"], "need": gap["need"], "claim_id": gap["claim_id"],
+                                "state": gap["state"], "attempt_count": len(gap["attempts"])}
+                               for gap in list(task.get("review_gaps", {}).values())[-10:]],
     }
     reviews = _need_reviews(task["needs"], records)
     remaining = sorted(

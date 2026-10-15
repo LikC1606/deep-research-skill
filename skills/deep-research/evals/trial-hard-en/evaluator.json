@@ -1,0 +1,8 @@
+{
+  "criteria": [
+    {"id": "R1", "weight": 2, "requirement": "Separate interim enrollment, randomization and analyzed populations", "reference": "18 is interim; final randomized N=24 (12 per arm), analyzed N=21 (10 intervention, 11 control). Do not assign the final means to all 24 or treat a later bulletin as a later primary analysis.", "source_ids": ["S1", "S3", "S5"], "evidence_groups": [["S1"], ["S3"]]},
+    {"id": "R2", "weight": 2, "requirement": "Compute a descriptive contrast without overstating causality", "reference": "Intervention minus control change is -6-(-4)=-2 mmHg, a 2 mmHg larger observed reduction. It is not a 2 percent reduction or a proven significant treatment effect.", "source_ids": ["S1", "S2"], "evidence_groups": [["S1"], ["S2"]]},
+    {"id": "R3", "weight": 2, "requirement": "Expose citation support limited to part of a compound claim", "reference": "S1 supports numerical means but not significant benefit, absence of adverse events or broad clinical effectiveness. S2 describes feasibility and missing-data limitations. A citation attached to the whole compound sentence cannot supply these missing conclusions.", "source_ids": ["S1", "S2", "S5"], "evidence_groups": [["S1"], ["S2"]]},
+    {"id": "R4", "weight": 2, "requirement": "Separate unavailable safety evidence from zero events", "reference": "S4 establishes missing public safety reporting, not that zero events occurred or that the intervention is safe. The bulletin is not independent corroborating evidence.", "source_ids": ["S3", "S4", "S5"], "evidence_groups": [["S4"], ["S5"]]}
+  ]
+}

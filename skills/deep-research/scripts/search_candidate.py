@@ -299,6 +299,19 @@ def _pdf_text(raw: bytes, details: dict | None = None) -> tuple[str, str]:
         truncated = False
         for number, page in enumerate(document, 1):
             value = _document_text(page.get_text("text"))
+            links = []
+            for link in page.get_links():
+                uri = (link.get("uri") or "").strip()
+                try:
+                    parsed = urllib.parse.urlsplit(uri)
+                    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                        continue
+                except ValueError:
+                    continue
+                if uri not in links:
+                    links.append(uri)
+            if links:
+                value = "\n".join([value] + [f"[PDF link] {uri}" for uri in links]).strip()
             if value:
                 remaining = MAX_TEXT_CHARS - size - (2 if parts else 0)
                 if remaining <= 0:
@@ -321,13 +334,32 @@ def _pdf_text(raw: bytes, details: dict | None = None) -> tuple[str, str]:
     return title, "\n\n".join(parts)
 
 
-def _html_text(raw: bytes, encoding: str = "utf-8") -> tuple[str, str]:
+def _html_text(raw: bytes, encoding: str = "utf-8", *, base_url: str = "") -> tuple[str, str]:
     soup = BeautifulSoup(raw.decode(encoding, errors="replace"), "html.parser")
     for node in soup(["script", "style", "noscript", "svg", "form", "nav", "footer"]):
         node.decompose()
     title = base._clean(soup.title.get_text(" ") if soup.title else "", 240)
-    main = soup.select_one("main, article")
-    text = (main or soup).get_text("\n", strip=True)
+    content = soup.select_one("main, article") or soup
+    base_tag = soup.find("base", href=True)
+    if base_tag is not None:
+        try:
+            base_url = urllib.parse.urljoin(base_url, base_tag["href"].strip())
+        except ValueError:
+            pass
+    for link in content.find_all("a", href=True):
+        href = link["href"].strip()
+        if not href or href.startswith("#"):
+            continue
+        try:
+            target = urllib.parse.urljoin(base_url, href)
+            parsed = urllib.parse.urlsplit(target)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                continue
+        except ValueError:
+            continue
+        label = link.get_text(" ", strip=True)
+        link.replace_with(f"{label} ({target})" if label and label != target else target)
+    text = content.get_text("\n", strip=True)
     return title, _document_text(text)
 
 
@@ -531,7 +563,7 @@ def read_page(
             else:
                 encoding_match = re.search(r"charset=([^; ]+)", mime, re.IGNORECASE)
                 encoding = encoding_match.group(1).strip('"\'') if encoding_match else "utf-8"
-                title, text = _html_text(raw, encoding)
+                title, text = _html_text(raw, encoding, base_url=fetched_url)
                 content_type = "html"
                 if _soft_error_page(title, text) or _content_shell(title, text):
                     errors.append(f"{target}: unreadable content shell ({title or 'untitled'})")

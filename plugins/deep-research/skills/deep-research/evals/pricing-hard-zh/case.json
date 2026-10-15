@@ -1,0 +1,18 @@
+{
+  "id": "pricing-hard-zh",
+  "question": "仅使用给定资料，为青梧 v3 计算 2026 年 9 月工作负载的美元费用，说明导出格式、相对旧版的计费差异，以及能否确认数据存放地区。关键事实和计算前提须引用来源，区分事实、计算与未知项。",
+  "budget": {"network_calls": 0, "search_calls": 5, "source_reads": 5},
+  "checklist": [
+    {"id": "N1", "requirement": "当前价格、生效版本与计价单位"},
+    {"id": "N2", "requirement": "按实际负载计算费用并说明边界"},
+    {"id": "N3", "requirement": "导出格式和地区信息的证据边界"}
+  ],
+  "sources": [
+    {"id": "S1", "path": "current.txt"},
+    {"id": "S2", "path": "archive.txt"},
+    {"id": "S3", "path": "workload.txt"},
+    {"id": "S4", "path": "export.txt"},
+    {"id": "S5", "path": "mirror.txt"}
+  ],
+  "evaluator": "evaluator.json"
+}
