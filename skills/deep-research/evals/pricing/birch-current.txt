@@ -1,0 +1,5 @@
+Synthetic evaluation fixture — Birch official pricing, updated 2026-09-02.
+Birch charges USD 6 per million processed records; up to 5 GB-month storage is included.
+Storage above 5 GB-month costs USD 1 per additional GB-month.
+No free processing allowance or minimum charge applies. Prices exclude taxes.
+Monthly retained storage is the average volume, not the total uploaded volume.

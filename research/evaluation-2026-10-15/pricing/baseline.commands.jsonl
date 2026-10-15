@@ -1,0 +1,5 @@
+{"args": ["--help"], "exit_code": 0, "elapsed_seconds": 0.6242887862026691}
+{"args": ["read", "<repo>/skills/deep-research/evals/pricing/atlas-current.txt"], "exit_code": 0, "elapsed_seconds": 0.48600657656788826}
+{"args": ["read", "<repo>/skills/deep-research/evals/pricing/birch-current.txt"], "exit_code": 0, "elapsed_seconds": 0.517122995108366}
+{"args": ["read", "<repo>/skills/deep-research/evals/pricing/atlas-archive.txt"], "exit_code": 0, "elapsed_seconds": 0.5601909030228853}
+{"args": ["read", "<repo>/skills/deep-research/evals/pricing/atlas-mirror.txt"], "exit_code": 0, "elapsed_seconds": 0.5588766578584909}

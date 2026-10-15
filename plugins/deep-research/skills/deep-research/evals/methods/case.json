@@ -1,0 +1,16 @@
+{
+  "id": "benchmark-comparability-and-missingness",
+  "question": "比较 Cedar 与 Delta 的准确率、延迟、算力和能耗，判断能否据现有证据宣称 Delta 更快更优，并提出公平复测方案。全部字段须保留；仅用本地语料。",
+  "budget": {"network_calls": 0, "source_reads": 4},
+  "checklist": [
+    {"id": "M1", "requirement": "保留双方准确率、延迟和对应数据集"},
+    {"id": "M2", "requirement": "比较硬件、batch 与测量范围差异"},
+    {"id": "M3", "requirement": "双方能耗均未提供，不杜撰数值"},
+    {"id": "M4", "requirement": "不能直接排序，并提出同数据/硬件/batch/计时范围的复测"}
+  ],
+  "sources": [
+    {"id": "C", "path": "cedar.txt"},
+    {"id": "D", "path": "delta.txt"},
+    {"id": "PROTOCOL", "path": "protocol.txt"}
+  ]
+}

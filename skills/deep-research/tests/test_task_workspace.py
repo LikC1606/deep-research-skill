@@ -89,6 +89,131 @@ class TaskWorkspaceTests(unittest.TestCase):
         self.assertEqual(summary["task"]["needs"]["N1"]["state"], "open")
         self.assertFalse(summary["completion_ready"])
 
+    def test_new_counterevidence_requires_explicit_review_before_completion(self):
+        self.init()
+        self.add()
+        answered = self.answer()
+        self.evidence()  # Re-recording the same immutable card is not a change.
+        self.assertTrue(workspace.status()["completion_ready"])
+        refute = self.evidence(relation="refutes")
+        before = (workspace.root() / "task.json").read_bytes()
+        summary = workspace.status()
+        self.assertEqual(summary["task"]["needs"]["N1"]["state"], "answered")
+        self.assertEqual(summary["remaining_needs"], ["N1"])
+        self.assertEqual(summary["next_need"], "N1")
+        self.assertEqual(summary["needs_requiring_review"], ["N1"])
+        details = summary["need_review_details"]["N1"]
+        self.assertFalse(details["review_basis_unknown"])
+        self.assertEqual(details["new_evidence_count"], 1)
+        self.assertEqual(details["new_evidence_ids"], [refute["id"]])
+        self.assertFalse(summary["completion_ready"])
+        with self.assertRaisesRegex(ValueError, "reviewing changed or untracked evidence"):
+            workspace.stop_task("All fields answered", complete=True)
+        self.assertEqual((workspace.root() / "task.json").read_bytes(), before)
+        for update in ({"priority": 1}, {"note": "A note update alone"}, {}):
+            workspace.set_need("N1", **update)
+            self.assertEqual(workspace.status()["needs_requiring_review"], ["N1"])
+        confirmed = workspace.set_need("N1", state="answered", note="Reviewed the new material and its scope")
+        self.assertEqual(confirmed["evidence_ids"], answered["evidence_ids"])
+        self.assertEqual(set(confirmed["reviewed_evidence_ids"]),
+                         {*answered["evidence_ids"], refute["id"]})
+        self.assertEqual(workspace.status()["needs_requiring_review"], [])
+        self.assertTrue(workspace.status()["completion_ready"])
+        before = (workspace.root() / "task.json").read_bytes()
+        workspace.set_need("N1", state="answered", note=confirmed["note"])
+        self.assertEqual((workspace.root() / "task.json").read_bytes(), before)
+        self.assertEqual(workspace.stop_task("Evidence reviewed", complete=True)["state"], "complete")
+
+    def test_review_basis_includes_unselected_cards_and_ignores_unrelated_activity(self):
+        self.init()
+        self.add()
+        self.add("N2")
+        context = self.evidence(relation="context")
+        answered = self.answer()
+        self.assertIn(context["id"], answered["reviewed_evidence_ids"])
+        self.assertNotIn(context["id"], answered["evidence_ids"])
+        self.evidence("N2")
+        workspace.record_failure("N1", "Read supplement", "Unavailable")
+        workspace.record_search_attempt("N1", "trial size", "fixture-key", cache_hit=True)
+        ref = "REF-0123456789ABCDEF"
+        workspace.save_source(ref, {"url": "local fixture", "content_scope": "local_file"},
+                              "Updated source: 24 samples.")
+        self.assertEqual(workspace.status()["needs_requiring_review"], [])
+        for relation in ("supports", "context"):
+            with self.subTest(relation=relation):
+                card = workspace.record_evidence(ref, "N1", "Updated trial detail", "24 samples", relation)
+                self.assertEqual(workspace.status()["need_review_details"]["N1"]["new_evidence_ids"],
+                                 [card["id"]])
+                workspace.set_need("N1", state="answered", note="Checked the updated evidence scope")
+                self.assertEqual(workspace.status()["needs_requiring_review"], [])
+
+    def test_legacy_answer_without_review_basis_needs_one_explicit_confirmation(self):
+        self.init()
+        self.add()
+        self.answer()
+        path = workspace.root() / "task.json"
+        task = json.loads(path.read_text())
+        del task["needs"]["N1"]["reviewed_evidence_ids"]
+        path.write_text(json.dumps(task), encoding="utf-8")
+        before = path.read_bytes()
+        summary = workspace.status()
+        self.assertEqual(summary["needs_requiring_review"], ["N1"])
+        details = summary["need_review_details"]["N1"]
+        self.assertTrue(details["review_basis_unknown"])
+        self.assertIsNone(details["new_evidence_count"])
+        self.assertIsNone(details["removed_evidence_count"])
+        self.assertEqual(details["new_evidence_ids"], [])
+        with self.assertRaisesRegex(ValueError, "untracked evidence"):
+            workspace.stop_task("Legacy answer", complete=True)
+        self.assertEqual(path.read_bytes(), before)
+        workspace.set_need("N1", state="answered", note="Reviewed the saved legacy evidence")
+        self.assertTrue(workspace.status()["completion_ready"])
+
+    def test_review_change_previews_are_bounded_but_counts_include_removed_cards(self):
+        self.init()
+        self.add()
+        support = self.evidence()
+        ref = "REF-0123456789ABCDEF"
+        removed = [workspace.record_evidence(ref, "N1", f"Old context {i}", "12 samples", "context")
+                   for i in range(12)]
+        workspace.set_need("N1", state="answered", note="Checked all existing cards",
+                           evidence_ids=[support["id"]])
+        path = workspace.root() / "evidence.json"
+        cards = json.loads(path.read_text())
+        for card in removed:
+            del cards[card["id"]]
+        path.write_text(json.dumps(cards), encoding="utf-8")
+        added = [workspace.record_evidence(ref, "N1", f"New context {i}", "12 samples", "context")
+                 for i in range(12)]
+        details = workspace.status()["need_review_details"]["N1"]
+        for label, records in (("new", added), ("removed", removed)):
+            self.assertEqual(details[f"{label}_evidence_count"], 12)
+            self.assertEqual(details[f"{label}_evidence_ids"], sorted(card["id"] for card in records)[:10])
+            self.assertTrue(details[f"{label}_evidence_ids_truncated"])
+
+    def test_late_evidence_after_completion_survives_reload_and_resume(self):
+        self.init()
+        self.add()
+        self.answer()
+        stopped = workspace.stop_task("Evidence reviewed", complete=True)
+        self.evidence(relation="refutes")
+        fresh = importlib.util.module_from_spec(SPEC)
+        SPEC.loader.exec_module(fresh)
+        before = (fresh.root() / "task.json").read_bytes()
+        summary = fresh.status()
+        self.assertEqual(summary["task"]["state"], "complete")
+        self.assertEqual(summary["needs_requiring_review"], ["N1"])
+        self.assertFalse(summary["completion_ready"])
+        self.assertEqual((fresh.root() / "task.json").read_bytes(), before)
+        with self.assertRaisesRegex(ValueError, "use resume"):
+            fresh.set_need("N1", state="answered", note="Reviewed late material")
+        self.assertEqual(fresh.resume_task()["last_stop"], stopped["last_stop"])
+        self.assertEqual(fresh.status()["next_need"], "N1")
+        fresh.set_need("N1", state="partial", note="The conflicting scope still needs checking")
+        self.assertEqual(fresh.status()["needs_requiring_review"], [])
+        self.assertEqual(fresh.status()["remaining_needs"], ["N1"])
+        self.assertEqual(fresh.stop_task("Need more evidence")["state"], "incomplete")
+
     def test_answer_requires_conclusion_and_evidence_for_the_same_need(self):
         self.init()
         self.add("N1")
@@ -205,6 +330,14 @@ class TaskWorkspaceTests(unittest.TestCase):
                        "--quote", "12 samples", "--relation", "supports")
             cli("need", need, "--state", "answered", "--note", "12 samples reported",
                 "--evidence", card["id"])
+        late = cli("evidence", source["ref"], "--need", "N1", "--claim", "Trial size",
+                   "--quote", "12 samples", "--relation", "context")
+        self.assertIn("reviewing changed", cli("stop", "--complete", "--reason", "Premature",
+                                              success=False)["error"])
+        summary = cli("status")
+        self.assertEqual(summary["remaining_needs"], ["N1"])
+        self.assertEqual(summary["need_review_details"]["N1"]["new_evidence_ids"], [late["id"]])
+        cli("need", "N1", "--state", "answered", "--note", "Reviewed the additional context")
         self.assertEqual(cli("stop", "--complete", "--reason", "All fields reviewed")["state"], "complete")
         self.assertEqual(cli("status")["remaining_needs"], [])
 

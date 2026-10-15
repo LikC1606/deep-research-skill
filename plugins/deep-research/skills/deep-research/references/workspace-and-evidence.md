@@ -15,12 +15,19 @@
     searches/<search_id>.json   # 查询参数、检索时间和候选结果；不等于正文证据
     sources/REF-.../
       metadata.json             # 最近快照的元数据
-      <content_hash>.json       # 历史快照元数据
+      <snapshot_id>.json        # 正文与元数据共同标识的历史快照
+      <content_hash>.json       # 兼容旧版；保留该正文首次保存的元数据
       <content_hash>.txt        # 保存的正文提取结果
     evidence.json               # 经原文摘录校验的证据卡
+    outline.json                # 可选：章节、Need 归属和提纲修订历史
+    syntheses/<section>.json    # 调用者综合，独立于原文证据
+    packets/<hash>.json         # 全量章节证据包；CLI 预览受字节预算限制
+    audits/<report_hash>.json   # 草稿逐句证据绑定与结构检查
 ```
 
-原文快照指提取后的文本，不是网页原始 HTML 或 PDF 二进制。元数据包括来源、读取时间、内容 hash、内容范围、是否截断、正文位置；PDF 还保存页码对应的字符区间。历史快照保留，刷新不会覆盖旧证据使用的正文。
+原文快照指提取后的文本，不是网页原始 HTML 或 PDF 二进制。元数据包括来源、读取时间、内容 hash、内容范围、是否截断、正文位置；PDF 还保存页码对应的字符区间。`content_hash` 只标识正文，用于相同文本去重；`snapshot_id` 同时区分正文及其来源、范围、截断标记和页码等元数据。历史快照保留，刷新不会覆盖旧证据使用的正文或元数据；正文与元数据均相同的重复读取复用快照标识，当前读取时间仍在 metadata.json 更新。
+
+按章节导出证据包、修订提纲、追踪论文前后引用、审计报告或进行固定语料成对评估时，读取 [reporting-and-evaluation.md](reporting-and-evaluation.md)。这些功能共用当前任务目录，不改变来源与语义判断的边界。
 
 ## 任务进度与恢复
 
@@ -39,19 +46,22 @@ research.py status
 - `init` 重复执行同一合同会保留进度；交付物、Target 或 constraints 不同则拒绝覆盖，提示使用新任务目录。
 - `need` 首次登记需要 question 和 proof；已有问题不能被同 ID 的不同问题覆盖。优先级为 1–5，1 最高，默认 3；Need 状态为 `open | partial | blocked | answered`。更新状态必须写 note，说明结论或剩余缺口。
 - 保存支持或反驳该 Need 的证据卡后，使用 `need N1 --state answered --note "具体结论及适用范围" --evidence EV_ID` 收尾。可重复 `--evidence` 关联多张卡。工具拒绝不存在、属于其他 Need 或仅为 context 的收尾证据；不会自动判定这些证据是否充分满足 proof。
+- 每次显式确认 `--state answered` 时，`reviewed_evidence_ids` 记录该 Need 当时全部证据卡，包含未被选入结论的反驳和 context；`evidence_ids` 仍只表示所选结论依据。此后卡片增加或移除，`needs_requiring_review` 提示复核，保留原有 answered 状态。重复保存同一卡片、其他 Need 的活动和只刷新来源不触发该提示。
 - 读取来源、增加证据或记录一次失败，都不会自动关闭 Need。`failure` 保留实际尝试和失败原因，不代替无收益轮次判断。
-- `status` 给出所有 Need、`remaining_needs` 和按优先级选择的 `next_need`；已 blocked 的项保留在缺口清单中。失败与搜索的总次数和各自最近 10 条记录随状态返回，完整记录留在 task.json。搜索次数包含缓存复用与失败，不等于联网次数。
+- `status` 给出所有 Need、`remaining_needs` 和按优先级选择的 `next_need`；已 blocked 和已答但待复核的项都保留在缺口清单中。`need_review_details` 给出新增/移除卡片总数及各最多 10 个 ID。旧任务的 answered 项若未保存复核范围，标 `review_basis_unknown`，变更计数为 null，需显式复核一次。失败与搜索的总次数和各自最近 10 条记录随状态返回，完整记录留在 task.json。搜索次数包含缓存复用与失败，不等于联网次数。
+
+出现待复核项时，用 `research.py review --need N1` 查看证据及范围；检查后用 `need N1 --state answered --note "已核对新增材料；结论及适用范围为……"` 重新确认，或将状态改为 partial/blocked 并记录缺口。若结论依据改变，同时更新 `--evidence`。修改备注、优先级、重复登记或刷新章节综合都不会代替这次显式确认。
 
 ```bash
 research.py stop --reason "读取预算耗尽；N2 尚缺存储费"
 research.py resume
-# 全部已登记 Need 为 answered，且检查过完整用户要求和冲突后：
+# 全部已登记 Need 为 answered、没有待复核项，且检查过完整用户要求和冲突后：
 research.py stop --complete --reason "全部必答项和重要冲突已核对"
 ```
 
-`stop` 默认标记 incomplete；`--complete` 要求至少一个 Need 且全部 answered。`resume` 重新激活任务并显示剩余缺口，保留已答项、失败历史和上次停止原因。停止后修改 Need 进度须先 resume。单个分支停滞不能让其他必答项消失。
+`stop` 默认标记 incomplete；`--complete` 要求至少一个 Need、全部 answered 且没有待复核项。`resume` 重新激活任务并显示剩余缺口，保留已答项、复核范围、失败历史和上次停止原因。停止后修改 Need 进度须先 resume；停止后到达的证据仍可触发复核提示，工具不自动改写上次停止状态。单个分支停滞不能让其他必答项消失。
 
-`completion_ready` 只检查已登记清单和显式进度。工具无法发现漏登记的用户要求，也不验证结论的语义正确性；不要把它当作报告质量评分。已有证据先于 init 创建时仍保留，`unregistered_evidence_needs` 提示尚未登记的 Need；初始化后新增证据必须使用已登记 ID，避免拼写错误。
+`completion_ready` 只检查已登记清单、显式进度和证据复核范围是否变化。待复核不等于原结论错误；工具无法发现漏登记的用户要求，也不验证结论的语义正确性或证据充分性，不要把它当作报告质量评分。已有证据先于 init 创建时仍保留，`unregistered_evidence_needs` 提示尚未登记的 Need；初始化后新增证据必须使用已登记 ID，避免拼写错误。
 
 跨来源综合、推断前提及逐事实的 `E / I / ?` 仍可记在 `research.md`，格式见 [evidence-ledger.md](evidence-ledger.md)。使用 task.json 时，以其为任务进度依据，无需在笔记中重复维护一套状态。
 
@@ -79,7 +89,7 @@ research.py read REF_OR_URL_OR_LOCAL_PATH --term "目标术语"
 research.py find REF --term "另一术语" --term "限制"
 research.py open REF --start-line 20 --count 30
 research.py read REF --refresh
-research.py open REF --version CONTENT_HASH --start-line 20 --count 30
+research.py open REF --version SNAPSHOT_ID --start-line 20 --count 30
 research.py status
 ```
 
@@ -87,7 +97,7 @@ research.py status
 - `find` 和 `open` 只读当前任务已保存的快照，不联网。`find` 未匹配时返回空窗口；`open` 默认最多返回 40 行，可用 `--count` 调整到 120 行，输出另受字符上限约束。
 - `read --refresh` 重新读取来源，适合需要当前版本或本地文件已更新的情况。在线来源刷新受 `source_policy` 和联网读取预算约束。
 - `content_scope` 区分 `full_text`、`abstract`、`metadata`、`readme`、`discussion`、`official_pages` 和 `local_file`。这些是实际读取范围，不表示该来源所有内容已被核验。检查 `truncated`；`false` 也不证明网站未在上游省略内容。
-- `windows` 与 `locators` 一一对应。记录结论时保留 `content_hash` 与行号/页码；换版本后用 `--version` 复查旧摘录。
+- `windows` 与 `locators` 一一对应。记录结论时保留 `snapshot_id`、`content_hash` 与行号/页码；换版本后用 `--version SNAPSHOT_ID` 复查旧摘录。旧版 `--version CONTENT_HASH` 继续可用，但相同正文对应多份元数据时只指向最早保留的那份，精确回读使用证据卡的 snapshot_id。
 - 本地路径返回 `citation_path`；网页返回 `citation_url`。二者都需要实际摘录支撑相邻 claim。
 
 ## 保存证据
@@ -99,7 +109,7 @@ research.py evidence REF --need N1 \
   --relation supports
 ```
 
-`--quote` 必须逐字出现在已保存文本中，不能使用翻译、拼接片段或自己概括的文字。`--start-line` 可用于定位重复摘录；`--version CONTENT_HASH` 选择历史快照。成功后返回证据 ID、claim、原文摘录、来源、内容 hash、位置、范围和是否截断。
+`--quote` 必须逐字出现在已保存文本中，不能使用翻译、拼接片段或自己概括的文字。`--start-line` 可用于定位重复摘录；`--version SNAPSHOT_ID` 选择精确历史快照，也兼容旧版 CONTENT_HASH。成功后返回证据 ID、claim、原文摘录、来源、快照标识、内容 hash、位置、范围和是否截断。读取旧版快照时可能没有 snapshot_id；旧证据仍按 content_hash 回读，不自动改写证据 ID。
 
 `--relation` 使用 `supports | refutes | context`，由调用者判断。`quote_verified=true` 只表示摘录能回到原文；不代表 claim 已通过语义核验。数字同现、词语重叠、模型自报 confidence 均不能单独证明蕴含。
 

@@ -1,0 +1,3 @@
+{"args": ["read", "<repo>/skills/deep-research/evals/trial/abstract.txt"], "exit_code": 0, "elapsed_seconds": 0.5506788231432438}
+{"args": ["read", "<repo>/skills/deep-research/evals/trial/mirror.txt"], "exit_code": 0, "elapsed_seconds": 0.4995313137769699}
+{"args": ["read", "<repo>/skills/deep-research/evals/trial/registry.txt"], "exit_code": 0, "elapsed_seconds": 0.5173215102404356}

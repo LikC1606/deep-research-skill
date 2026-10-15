@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "case_id": "pricing-version-and-units",
+  "case_hash": "9bc537c2cdb6712c34ed9d358614f1e73218876348636a45b3c3df30bfe1ab37",
+  "question": "截至 2026-09，比较 Atlas 和 Birch 每月处理 200 万条记录、保留 3 GB 数据的费用，给出建议，说明旧价格为何不同以及结论的适用边界。仅使用提供的本地语料。",
+  "checklist": [
+    {
+      "id": "P1",
+      "requirement": "Atlas 当前月费及计算过程，保留美元和计价单位"
+    },
+    {
+      "id": "P2",
+      "requirement": "Birch 月费及计算过程，纳入存储费用"
+    },
+    {
+      "id": "P3",
+      "requirement": "解释 Atlas 历史价格和生效时间差异"
+    },
+    {
+      "id": "P4",
+      "requirement": "建议、差价，以及税费和负载外推的限制"
+    }
+  ],
+  "corpus": [
+    {
+      "id": "A",
+      "path": "atlas-current.txt",
+      "hash": "5357b01f8f6abf92b45323a59af9cf6875361582a1983dd662b287e1db27cdb6",
+      "text": "Synthetic evaluation fixture — Atlas official price notice.\nPublished 2026-08-15. Effective 2026-09-01.\nAtlas charges USD 4 per million processed records and USD 2 per GB-month retained.\nNo free allowance or minimum charge applies. Prices exclude taxes.\nThese rates describe billing, not processing speed or service reliability.\n"
+    },
+    {
+      "id": "OLD",
+      "path": "atlas-archive.txt",
+      "hash": "c3cd2027cd2ef72e73396028c1155aa151877caffa32e1245246c81860ce31c2",
+      "text": "Synthetic evaluation fixture — archived Atlas pricing.\nEffective 2026-01-01 through 2026-08-31.\nAtlas charges USD 3 per million processed records. Storage is included.\nThis archived offer is superseded on 2026-09-01. Prices exclude taxes.\n"
+    },
+    {
+      "id": "B",
+      "path": "birch-current.txt",
+      "hash": "22e74e8d3003703c89c6302349c720669c751cada26b08cd65a3ecd0784a04eb",
+      "text": "Synthetic evaluation fixture — Birch official pricing, updated 2026-09-02.\nBirch charges USD 6 per million processed records; up to 5 GB-month storage is included.\nStorage above 5 GB-month costs USD 1 per additional GB-month.\nNo free processing allowance or minimum charge applies. Prices exclude taxes.\nMonthly retained storage is the average volume, not the total uploaded volume.\n"
+    },
+    {
+      "id": "M",
+      "path": "atlas-mirror.txt",
+      "hash": "5357b01f8f6abf92b45323a59af9cf6875361582a1983dd662b287e1db27cdb6",
+      "text": "Synthetic evaluation fixture — Atlas official price notice.\nPublished 2026-08-15. Effective 2026-09-01.\nAtlas charges USD 4 per million processed records and USD 2 per GB-month retained.\nNo free allowance or minimum charge applies. Prices exclude taxes.\nThese rates describe billing, not processing speed or service reliability.\n"
+    }
+  ],
+  "budget": {
+    "network_calls": 0,
+    "source_reads": 5
+  },
+  "rubric": {
+    "completeness": "Cover every checklist item; disclose missing facts without inventing values.",
+    "citation_support": "Check actual passages, units, dates and scope; a reachable citation is insufficient.",
+    "source_quality": "Use direct sources; do not count mirrors as independent or abstracts as full experiments.",
+    "synthesis": "Explain conflicts, mechanisms and actionable limits instead of listing source summaries."
+  },
+  "reports": {
+    "A": {
+      "text": "# 月度费用比较\n\n截至2026年9月，在每月处理200万条记录、平均保留3 GB数据一整月（即3 GB-month）的条件下，建议按费用选择 **Birch：USD 12/月**；Atlas为 **USD 14/月**，Birch每月便宜 **USD 2**。这是税前账单比较，不包含服务性能判断。存储按月平均保留量理解，而不是累计上传量。[A:L3-L5][B:L2-L5]\n\n以下单价为原文直接证据（E），费用为代入给定负载的计算（I）。\n\n| 项目 | Atlas | Birch |\n| --- | --- | --- |\n| 处理单价（E） | USD 4/百万条记录 [A:L3] | USD 6/百万条记录 [B:L2] |\n| 处理费（I） | 2百万条 × USD 4/百万条 = USD 8/月 | 2百万条 × USD 6/百万条 = USD 12/月 |\n| 存储规则（E） | USD 2/GB-month [A:L3] | 包含至多5 GB-month；超出部分USD 1/GB-month [B:L2-L3] |\n| 存储费（I） | 3 GB-month × USD 2/GB-month = USD 6/月 | 3 GB-month未超过5 GB-month，额外存储费USD 0/月 |\n| 合计（I） | USD 8 + USD 6 = **USD 14/月** | USD 12 + USD 0 = **USD 12/月** |\n\n两家均无免费处理额度或最低收费，所以上表无需再扣免费量或套用最低账单。[A:L4][B:L4]\n\n旧报价并非同一时期的另一个现价：Atlas历史方案在2026-01-01至2026-08-31有效，按USD 3/百万条收费并包含存储；按该历史规则，同样负载会是USD 6/月。该方案于2026-09-01被替代。[OLD:L2-L4] 新公告发布于2026-08-15、于2026-09-01生效，因此9月应使用新处理单价并单列存储费；新旧规则代入该负载相差USD 8/月。[A:L2-L3] 镜像与当前公告正文相同，不能算作独立的价格核验。[A:L1-L5][M:L1-L5]\n\n跨来源看，Atlas旧价与新价的差异来自生效时间和存储计价方式；Birch虽有更高的处理单价，但给定存储量落在其包含额度内，因此总账单更低。[OLD:L2-L4][A:L2-L4][B:L2-L3] 这只支持当前负载下的费用建议。两家报价均不含税，实际含税差价未核验；处理量或平均存储量改变、尤其Birch超过5 GB-month时，应重新计算，不能沿用USD 2的差价。报价本身也不证明处理速度或可靠性。[A:L4-L5][B:L3-L5]\n\n研究状态：Deep；已读4份本地来源文件，未联网。全部必答项与历史价格差异已核对，证据足够后停止；未核验所给材料之外的价格更新或实际账单。\n",
+      "report_hash": "ddfd451b583f07c80aac54d594f907c2797597efc00dfb4d7da4428bfb91743d"
+    },
+    "B": {
+      "text": "# Atlas 与 Birch 月费用比较\n\n截至 **2026-09**，每月处理 **200 万条记录**、月均保留 **3 GB** 数据时，按所给现行规则计算，**Atlas 为 USD 14/月，Birch 为 USD 12/月，均不含税**。只以这项负载的账单费用为标准，建议选择 Birch，每月少付 **USD 2**。以下计算把保留 3 GB 理解为整月平均保留量，即 **3 GB-month**；Birch 明确按月均保留量而非累计上传量计存储。[A:L2-L4][B:L2-L5]\n\n| 月费用项目 | Atlas | Birch |\n| --- | --- | --- |\n| 记录处理单价 | USD 4/百万条记录 | USD 6/百万条记录 |\n| 200 万条处理费 | 2 百万条 × USD 4/百万条 = USD 8 | 2 百万条 × USD 6/百万条 = USD 12 |\n| 存储规则 | USD 2/GB-month | 包含至多 5 GB-month；超出部分 USD 1/GB-month |\n| 3 GB-month 存储费 | 3 GB-month × USD 2/GB-month = USD 6 | max(3−5, 0) GB-month × USD 1/GB-month = USD 0 |\n| 总计 | **USD 14/月** | **USD 12/月** |\n| 规则证据 | [A:L2-L4] | [B:L1-L5] |\n\n上表总额和差价是按来源费率推算的结果。Atlas 无免费额度或最低收费；Birch 无免费处理额度或最低收费，因此本次计算无需再减免或补足最低账单。[A:L4][B:L4]\n\n旧 Atlas 价格较低，原因是**规则与适用时间改变**：归档方案有效期为 **2026-01-01 至 2026-08-31**，处理费 **USD 3/百万条记录，存储已包含**，并明确在 **2026-09-01** 被取代。[OLD:L2-L4] 按旧规则，同样负载为 2 × USD 3 = **USD 6/月、不含税**；该数值不能用于 2026-09。现行通知发表于 **2026-08-15**，从 **2026-09-01** 生效，既将处理单价改为 USD 4/百万条，也将存储改为单独收费。[A:L2-L4] 因而当前同负载账单较旧规则增加 USD 8/月，其中处理费增加 USD 2、另收存储 USD 6；这是版本差异，不是两个可同时选用的现行报价。镜像与现行通知正文相同，只是重复信息，未提供另一套独立价格规则。[M:L1-L5][A:L1-L5]\n\n综合与限制：Atlas 的处理单价较低，但在指定负载下，其 USD 6 存储费超过 USD 4 的处理费优势，因此 Birch 总价更低。这个结论以 200 万条记录、3 GB-month 和上述版本为前提；处理量或月均存储量改变后应按单位重新计算，尤其 Birch 超出 5 GB-month 后另收费，不能直接外推当前 USD 2 的差价。[A:L3][B:L2-L3] 双方价格均不含税，语料没有税率，故这里无法给出含税总额或确认含税差价。[A:L4][B:L4] 计价资料也不能证明处理速度或服务可靠性；采购建议仅依据本次费用，不构成整体服务质量排名。[A:L5]\n\n研究状态：Light；已读全部 4 份指定本地来源，零联网。现价、历史版本、计价单位、存储、差价与限制均已核对，停止继续检索。\n",
+      "report_hash": "fe7f4940d42c8d4f0f1bbc829b25b6b653bf0079adb0fc6e27870eb0a7a9ed74"
+    }
+  },
+  "scoring": "0=absent/incorrect, 1=major gaps, 2=partial, 3=mostly meets, 4=fully meets"
+}

@@ -1,0 +1,4 @@
+Synthetic evaluation fixture — archived Atlas pricing.
+Effective 2026-01-01 through 2026-08-31.
+Atlas charges USD 3 per million processed records. Storage is included.
+This archived offer is superseded on 2026-09-01. Prices exclude taxes.

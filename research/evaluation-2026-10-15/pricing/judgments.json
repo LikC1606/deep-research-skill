@@ -1,0 +1,74 @@
+{
+  "case_hash": "9bc537c2cdb6712c34ed9d358614f1e73218876348636a45b3c3df30bfe1ab37",
+  "reviewer": "independent-agent-blind-review",
+  "reports": {
+    "A": {
+      "report_hash": "ddfd451b583f07c80aac54d594f907c2797597efc00dfb4d7da4428bfb91743d",
+      "scores": {
+        "completeness": 4,
+        "citation_support": 4,
+        "source_quality": 4,
+        "synthesis": 4
+      },
+      "reasons": {
+        "completeness": "P1至P4均覆盖。报告给出“2百万条×USD 4/百万条＝USD 8”和“3 GB-month×USD 2/GB-month＝USD 6”，合计 Atlas USD 14/月；Birch 为 USD 12＋0＝USD 12/月。另写旧价 USD 6/月、生效日期、差价 USD 2、不含税和负载外推限制，保留了所有必答单位。",
+        "citation_support": "逐项对照实际行文：A:L3列 USD 4/百万条与 USD 2/GB-month，B:L2-L3列 USD 6/百万条、包含5 GB-month及超量单价，支持表内计算。OLD:L2-L4支持旧价有效期、包含存储及被替代日期；A:L2支持公告发布和生效日期。A:L4-L5及B:L3-L5支持税费、性能及存储边界。USD 14、12、2与历史差额8是透明代入计算，无数字或引用范围错误。",
+        "source_quality": "使用现行官方价格通知、Birch官方价目与归档条款区分版本。报告说“镜像与当前公告正文相同，不能算作独立的价格核验”，与A:L1-L5和M:L1-L5完全相同的正文相符，没有把重复文件算成额外确认。",
+        "synthesis": "报告把“旧价与新价的差异来自生效时间和存储计价方式”与当前账单联系起来，并解释Birch处理单价虽高但3 GB-month落在包含额度内。结论限定给定负载下的税前费用，要求负载变化后重算，并依A:L5说明不能推出速度或可靠性，推断有界且可操作。"
+      },
+      "checklist": {
+        "P1": {
+          "status": "inference",
+          "reason": "报告依据A:L3的 USD 4/百万条及 USD 2/GB-month，计算200万条处理费8美元、3 GB-month存储费6美元，合计 USD 14/月。币种与单位完整，月费为透明计算。"
+        },
+        "P2": {
+          "status": "inference",
+          "reason": "报告用B:L2-L3的 USD 6/百万条及包含5 GB-month规则，计算2×6＝12美元；3未超5，额外存储为0，合计 USD 12/月，未遗漏存储。"
+        },
+        "P3": {
+          "status": "direct",
+          "reason": "报告准确写出OLD:L2-L4所载2026-01-01至2026-08-31、USD 3/百万条且包含存储、2026-09-01被替代；并对照A:L2-L3的2026-08-15发布和9月1日生效及新存储计费，历史差异的必要事实直接得到支持。"
+        },
+        "P4": {
+          "status": "inference",
+          "reason": "按已算月费建议Birch并给出14−12＝USD 2/月。A:L4及B:L4说明均不含税，报告保留含税差价未知；依据B:L3-L5提示存储超5 GB-month及平均负载变化须重算，未把本次差价外推。"
+        }
+      }
+    },
+    "B": {
+      "report_hash": "fe7f4940d42c8d4f0f1bbc829b25b6b653bf0079adb0fc6e27870eb0a7a9ed74",
+      "scores": {
+        "completeness": 4,
+        "citation_support": 4,
+        "source_quality": 4,
+        "synthesis": 4
+      },
+      "reasons": {
+        "completeness": "P1至P4均覆盖。报告逐项保留处理与存储单价、3 GB-month假设和两个总额，给出Birch税前每月便宜USD 2。历史段包含旧方案有效期、旧月费USD 6、新公告发布与生效时间；结尾明确税率缺失和负载变化、超额存储、性能判断的限制。",
+        "citation_support": "A:L2-L4实际包含现价生效时间、USD 4/百万条、USD 2/GB-month和不含税；B:L2-L5支持包含5 GB-month、超量USD 1/GB-month与月均保留量。OLD:L2-L4支持旧价及到期。表内2×4＋3×2＝14、2×6＋max(3−5,0)×1＝12以及历史新增处理费2和存储费6均计算正确；A:L5恰支持不能由报价推断速度或可靠性的限定。",
+        "source_quality": "报告使用两份现行官方条款与Atlas归档来源，明确历史规则已失效；把M:L1-L5与A:L1-L5视为同文重复而非独立价格证据，来源身份与独立性处理准确。",
+        "synthesis": "报告解释Atlas的USD 6存储费超过其USD 4处理费优势，从而连接单价与总账单；又把当前较旧规则增加的USD 8拆为处理费2及存储费6。推荐限定本负载、当前版本与税前账单，税率缺失不补估，负载改变须重算，足以支撑决策而未扩张为服务质量排名。"
+      },
+      "checklist": {
+        "P1": {
+          "status": "inference",
+          "reason": "表格依据A:L3费率，计算处理2×4＝USD 8，存储3×2＝USD 6，合计 USD 14/月；美元、百万条与GB-month均保留，明确按月均保留3 GB处理。"
+        },
+        "P2": {
+          "status": "inference",
+          "reason": "依据B:L2-L3，处理2×6＝USD 12，额外存储max(3−5,0)×USD 1＝0，合计 USD 12/月；包含及超额存储规则均纳入。"
+        },
+        "P3": {
+          "status": "direct",
+          "reason": "报告对照OLD:L2-L4与A:L2-L4，准确说明旧价USD 3/百万条含存储仅适用至2026-08-31，现价于2026-08-15公布、2026-09-01生效并另收存储；不能将旧价当9月可选报价。"
+        },
+        "P4": {
+          "status": "inference",
+          "reason": "依据14与12的计算建议Birch、差价USD 2/月。报告说明A:L4及B:L4不含税且无税率，无法确认含税总额或差价；按A:L3和B:L2-L3要求处理量、月均保留量改变后重新计算，避免外推。"
+        }
+      }
+    }
+  },
+  "preferred": "tie",
+  "reason": "平局。A、B均正确计算现行 Atlas USD 14/月、Birch USD 12/月及税前差价 USD 2，核对旧方案 USD 6/月与 2026-09-01 换版，且明确镜像不独立、GB-month 假设、税率缺失和负载变化限制。B细分新旧账单增加的处理费与存储费，A明确区分单价证据与计算，但二者对任务的正确性、完整性和建议边界没有实质差距。"
+}

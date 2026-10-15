@@ -1,0 +1,17 @@
+{
+  "id": "pricing-version-and-units",
+  "question": "截至 2026-09，比较 Atlas 和 Birch 每月处理 200 万条记录、保留 3 GB 数据的费用，给出建议，说明旧价格为何不同以及结论的适用边界。仅使用提供的本地语料。",
+  "budget": {"network_calls": 0, "source_reads": 5},
+  "checklist": [
+    {"id": "P1", "requirement": "Atlas 当前月费及计算过程，保留美元和计价单位"},
+    {"id": "P2", "requirement": "Birch 月费及计算过程，纳入存储费用"},
+    {"id": "P3", "requirement": "解释 Atlas 历史价格和生效时间差异"},
+    {"id": "P4", "requirement": "建议、差价，以及税费和负载外推的限制"}
+  ],
+  "sources": [
+    {"id": "A", "path": "atlas-current.txt"},
+    {"id": "OLD", "path": "atlas-archive.txt"},
+    {"id": "B", "path": "birch-current.txt"},
+    {"id": "M", "path": "atlas-mirror.txt"}
+  ]
+}

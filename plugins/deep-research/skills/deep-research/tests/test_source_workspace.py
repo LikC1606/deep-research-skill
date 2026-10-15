@@ -4,6 +4,8 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -185,6 +187,108 @@ class SourceWorkspaceTests(unittest.TestCase):
         old = workspace.open_source(first["ref"], version=record["content_hash"])
         self.assertIn("12 samples", old["text"])
         self.assertIn("24 samples", workspace.open_source(first["ref"])["text"])
+
+    def test_identical_text_refresh_preserves_historical_scope_pages_and_content_alias(self):
+        text = "Results\n12 samples."
+        first = self.read_network(text, content_scope="abstract", truncated=True,
+                                  pages=[{"page": 1, "start_char": 0, "end_char": len(text)}])
+        card = workspace.record_evidence(first["ref"], "N1", "Trial size", "12 samples", "supports")
+        folder = Path(first["body_path"]).parent
+        before = {version: (folder / f"{version}.json").read_bytes()
+                  for version in (first["snapshot_id"], first["content_hash"])}
+        with mock.patch.object(research.v1, "read_page", return_value=document(
+            first["url"], text, pages=[{"page": 7, "start_char": 0, "end_char": len(text)}]
+        )):
+            latest = research._ref_read(first["ref"], [], 100, refresh=True)
+        self.assertEqual(first["content_hash"], latest["content_hash"])
+        self.assertNotEqual(first["snapshot_id"], latest["snapshot_id"])
+        for version, saved in before.items():
+            self.assertEqual((folder / f"{version}.json").read_bytes(), saved)
+            old = workspace.open_source(first["ref"], version=version)
+            self.assertEqual(old["content_scope"], "abstract")
+            self.assertTrue(old["truncated"])
+            self.assertEqual(old["locator"]["pages"], [1])
+        current = workspace.open_source(first["ref"], version=latest["snapshot_id"])
+        self.assertEqual(current["content_scope"], "full_text")
+        self.assertFalse(current["truncated"])
+        self.assertEqual(current["locator"]["pages"], [7])
+        repeated = workspace.record_evidence(first["ref"], "N1", "Trial size", "12 samples", "supports",
+                                             version=card["snapshot_id"])
+        self.assertEqual(repeated["id"], card["id"])
+        new = workspace.record_evidence(first["ref"], "N1", "Trial size", "12 samples", "supports")
+        self.assertEqual(new["snapshot_id"], latest["snapshot_id"])
+        self.assertNotEqual(new["id"], card["id"])
+        self.assertEqual(workspace.review_evidence()["distinct_content_count"], 1)
+
+    def test_identical_refresh_keeps_snapshot_and_evidence_identity(self):
+        text = "Results\n12 samples."
+        first = self.read_network(text)
+        card = workspace.record_evidence(first["ref"], "N1", "Trial size", "12 samples", "supports")
+        snapshot = Path(first["body_path"]).with_name(f"{first['snapshot_id']}.json")
+        before = snapshot.read_bytes()
+        with mock.patch.object(research.v1, "read_page", return_value=document(first["url"], text)):
+            latest = research._ref_read(first["ref"], [], 100, refresh=True)
+        self.assertEqual(latest["snapshot_id"], first["snapshot_id"])
+        self.assertEqual(snapshot.read_bytes(), before)
+        self.assertEqual(workspace.record_evidence(first["ref"], "N1", "Trial size", "12 samples",
+                                                    "supports")["id"], card["id"])
+
+    def test_legacy_snapshots_remain_readable_and_gain_precise_versions_on_refresh(self):
+        first = self.read_network()
+        folder = Path(first["body_path"]).parent
+        legacy = {key: value for key, value in first.items()
+                  if key not in {"snapshot_id", "windows", "locators", "cache_hit", "citation_url",
+                                 "allowed_citation_urls", "citation_note", "discovery"}}
+        for name in ("metadata.json", f"{first['content_hash']}.json"):
+            (folder / name).write_text(json.dumps(legacy), encoding="utf-8")
+        (folder / f"{first['snapshot_id']}.json").unlink()
+        old = workspace.open_source(first["ref"], version=first["content_hash"])
+        self.assertNotIn("snapshot_id", old)
+        card = workspace.record_evidence(first["ref"], "N1", "Trial size", "12 samples", "supports")
+        self.assertNotIn("snapshot_id", card)
+        metadata, text = workspace.require_source(first["ref"])
+        refreshed, _ = workspace.save_source(first["ref"], {**metadata, "content_scope": "abstract"}, text)
+        self.assertEqual(workspace.open_source(first["ref"], version=first["content_hash"])["content_scope"],
+                         "full_text")
+        self.assertEqual(workspace.open_source(first["ref"], version=refreshed["snapshot_id"])["content_scope"],
+                         "abstract")
+
+    def test_metadata_corruption_and_mismatched_versions_are_rejected(self):
+        first = self.read_network()
+        folder = Path(first["body_path"]).parent
+        path = folder / f"{first['snapshot_id']}.json"
+        metadata = json.loads(path.read_text())
+        metadata["content_scope"] = "abstract"
+        path.write_text(json.dumps(metadata), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "metadata changed"):
+            workspace.open_source(first["ref"], version=first["snapshot_id"])
+        wrong_version = "0" * 64
+        (folder / f"{wrong_version}.json").write_bytes((folder / "metadata.json").read_bytes())
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            workspace.open_source(first["ref"], version=wrong_version)
+
+    def test_cli_open_find_and_evidence_use_snapshot_versions_offline(self):
+        text = "Results\n12 samples."
+        first = self.read_network(text, content_scope="abstract", truncated=True,
+                                  pages=[{"page": 1, "start_char": 0, "end_char": len(text)}])
+        workspace.save_source(first["ref"], {"url": first["url"], "content_scope": "full_text",
+                                             "pages": [{"page": 7, "start_char": 0, "end_char": len(text)}]}, text)
+
+        def cli(*args):
+            result = subprocess.run([sys.executable, str(PATH), *args], capture_output=True, text=True,
+                                    timeout=30, env={**os.environ, "DEEP_RESEARCH_SOURCE_POLICY": "local_only"})
+            self.assertEqual(result.returncode, 0, (result.stdout + result.stderr)[:1500])
+            return json.loads(result.stdout)
+
+        self.assertEqual(cli("open", first["ref"], "--version", first["snapshot_id"])["locator"]["pages"], [1])
+        found = cli("find", first["ref"], "--version", first["snapshot_id"], "--term", "samples")
+        self.assertEqual(found["content_scope"], "abstract")
+        self.assertEqual(found["locators"][0]["pages"], [1])
+        card = cli("evidence", first["ref"], "--version", first["snapshot_id"], "--need", "N1",
+                   "--claim", "Trial size", "--quote", "12 samples", "--relation", "supports")
+        self.assertEqual(card["snapshot_id"], first["snapshot_id"])
+        self.assertTrue(card["source_truncated"])
+        self.assertEqual(cli("open", first["ref"])["locator"]["pages"], [7])
 
     def test_another_run_cannot_reuse_sources_or_refs(self):
         result = self.read_network()

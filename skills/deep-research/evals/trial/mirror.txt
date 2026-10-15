@@ -1,0 +1,3 @@
+Synthetic fixture — a news mirror of the North study, published 2026-05-11.
+Our report repeats the North study abstract: 12 adults at one site, mean score 8 before and 6 after.
+We collected no new data and did not independently replicate the intervention.

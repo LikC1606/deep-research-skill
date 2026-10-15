@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "case_id": "abstract-mirror-and-scope",
+  "case_hash": "1e74397425cb2962e805ca13764a26a005c7cd36b8765404a0710b94db704122",
+  "question": "评价 North 的干预结果是否足以支持推广到多站点人群：报告效应、样本、站点、因果与外推边界，并核对独立验证是否成立。仅使用提供的本地语料。",
+  "checklist": [
+    {
+      "id": "T1",
+      "requirement": "12 人、单站点、非随机观察设计"
+    },
+    {
+      "id": "T2",
+      "requirement": "均值从 8 降到 6，区分变化与因果归因"
+    },
+    {
+      "id": "T3",
+      "requirement": "镜像报道不是独立验证，后续研究仍无结果"
+    },
+    {
+      "id": "T4",
+      "requirement": "多站点推广建议与缺失证据"
+    }
+  ],
+  "corpus": [
+    {
+      "id": "ABSTRACT",
+      "path": "abstract.txt",
+      "hash": "1f156a3c3abe011c7a3d5575b6821b30f8b2e888c553fe3fcc11f6ff900bce21",
+      "text": "Synthetic fixture — North study abstract, published 2026-05-10.\nThis single-site, non-randomized observational study enrolled 12 adults.\nThe mean symptom score changed from 8 at baseline to 6 after four weeks.\nThere was no concurrent control group. The abstract reports no confidence interval.\nThe abstract does not establish a causal treatment effect or generalizability to other sites.\nThe full paper is not supplied in this evaluation corpus.\n"
+    },
+    {
+      "id": "MIRROR",
+      "path": "mirror.txt",
+      "hash": "c3343e0b973d7c52a73b2f42e93bddc35058fbec7f67e4d05d19a1ec366a6357",
+      "text": "Synthetic fixture — a news mirror of the North study, published 2026-05-11.\nOur report repeats the North study abstract: 12 adults at one site, mean score 8 before and 6 after.\nWe collected no new data and did not independently replicate the intervention.\n"
+    },
+    {
+      "id": "REGISTRY",
+      "path": "registry.txt",
+      "hash": "3965591a6f77a4fb11dc89c796a7d9c4b03f2c7781d1f6d60e8314a57c87d029",
+      "text": "Synthetic fixture — South registry update, 2026-09-01.\nA planned multi-site randomized study will recruit 120 adults.\nRecruitment has not begun. No outcomes or intervention effects have been reported.\nThis registration is a study plan, not an independent validation result.\n"
+    }
+  ],
+  "budget": {
+    "network_calls": 0,
+    "source_reads": 4
+  },
+  "rubric": {
+    "completeness": "Cover every checklist item; disclose missing facts without inventing values.",
+    "citation_support": "Check actual passages, units, dates and scope; a reachable citation is insufficient.",
+    "source_quality": "Use direct sources; do not count mirrors as independent or abstracts as full experiments.",
+    "synthesis": "Explain conflicts, mechanisms and actionable limits instead of listing source summaries."
+  },
+  "reports": {
+    "A": {
+      "text": "# 干预效果与推广证据评估\n\n**现有材料不足以支持把North的干预效果推广到多站点人群，也未建立独立验证。** 能确认的是一个小样本、单站点观察研究中的前后均值变化；因果效果和跨站点有效性仍待验证。[ABSTRACT:L2-L5][MIRROR:L2-L3][REGISTRY:L2-L4]\n\n原研究于2026-05-10发布摘要，纳入12名成年人，采用单站点、非随机观察设计，没有同期对照组。症状评分均值从基线8降至四周后的6，即观察到下降2分（6−8＝−2，算术推断）；摘要未报告置信区间。[ABSTRACT:L1-L4] 这个变化不能直接解释为“干预造成下降2分”：前提是没有随机化及同期对照，因而缺少可靠的未干预比较，不能从前后差值识别干预的因果贡献。摘要自身也未建立因果效果或其他站点的可推广性。[ABSTRACT:L2-L5]\n\n独立验证核对如下：\n\n| 材料 | 实际提供的证据 | 能否算独立验证 |\n| --- | --- | --- |\n| North摘要 | 12人、一个站点的原始研究摘要 | 是原研究线索，不是独立复现 [ABSTRACT:L2-L6] |\n| 次日镜像报道 | 明确复述该摘要，未收集新数据、未独立复现 | **不能**；重复报道没有增加独立效果证据 [MIRROR:L1-L3] |\n| South后续登记 | 2026-09-01记录拟开展多站点随机研究、计划招募120人；尚未开始招募，未报告结局或干预效应 | **不能**；120是计划人数，并非已完成样本，登记不是验证结果 [REGISTRY:L1-L4] |\n\n三份材料相互连接后，证据并未从“单站点前后变化”升级到“独立多站点效果”：镜像仍依赖同一摘要，后续登记只说明研究计划。[ABSTRACT:L2-L5][MIRROR:L2-L3][REGISTRY:L2-L4] 因此建议先完成多站点随机对照验证，再据结果考虑推广；复核重点应包括干预相对对照的效应与置信区间，以及不同站点和目标人群中的一致性。这是基于现有设计、精度报告和外推缺口提出的研究建议，并非已取得的研究结果。\n\n限制：所供材料只有摘要，没有全文，不能据此断言全文也未报告置信区间或其他分析。[ABSTRACT:L4-L6] 未报告置信区间意味着此材料未量化效应估计的不确定性；单站点12名成年人也不能证明其他站点或人群受益。[ABSTRACT:L2-L5] 后续状态仅能确认到所供2026-09-01登记，不能推断此后是否完成；结论是本语料没有独立验证结果，而非断言外部世界不存在其他研究。[REGISTRY:L1-L4]\n\n研究状态：Deep；已读3份本地来源，未联网。设计、效应、来源独立性、登记成熟度与推广边界均已覆盖；缺少的因果和多站点结果明确保留为限制，停止继续取证。\n",
+      "report_hash": "b6aaf33978a0aacff5dacc7d5dc403deb4413688044f9bc557cf7c07f2cdf88c"
+    },
+    "B": {
+      "text": "# North 干预结果评估\n\n现有证据不足以支持向多站点人群推广，也不足以确认干预具有因果疗效。所给资料支持的结论是：一个小样本、单站点观察研究记录了四周后的症状均值下降；镜像报道和尚无结果的注册计划均未提供独立验证。[ABSTRACT:L2-L5][MIRROR:L2-L3][REGISTRY:L2-L4]\n\n原始摘要发表于 2026-05-10，纳入 **12 名成年人**，采用**单站点、非随机观察设计**，没有同期对照组。症状评分均值从基线 **8** 变为四周后的 **6**，摘要未报告置信区间。[ABSTRACT:L1-L4] 据这些均值计算，组内变化为 **−2 分**，相对基线下降 **25%**；这是描述性推算，不能解释为干预造成的净改善。缺少随机分配和同期对照，无法用这些资料排除自然变化、回归均值或其他同时发生因素的影响；这些是可能的替代解释，未在所给资料中得到检验。\n\n独立验证目前不成立。2026-05-11 的镜像明确表示重复原摘要，没有采集新数据，也没有独立复现干预，因此两篇文本只对应同一项观察证据。[MIRROR:L1-L3] 2026-09-01 的 South 注册更新描述的是计划招募 **120 名成年人**的多站点随机研究；招募尚未开始，未报告结局或干预效应。120 是计划样本量，不能作为已经完成的验证样本量。[REGISTRY:L1-L4]\n\n综合来看，均值下降可作为进一步研究的初步信号；它与缺少对照、缺少独立复现的事实合在一起，支持继续验证，而非直接推广。建议先完成具有同期对照和随机分配的多站点研究，预先确定结局与随访时间，报告效应大小、置信区间及各站点和目标人群的结果，再评估推广。该建议是基于现有设计缺口的研究方案，不能当作已有疗效证据。\n\n限制：语料只提供摘要，没有全文，无法从中核验完整的招募标准、分析方法或更多结局；摘要本身也未建立因果效应或跨站点适用性。[ABSTRACT:L5-L6] 未报告置信区间意味着这里无法量化效应估计的不确定性。注册计划不保证未来研究会成功，现有资料也不能证明干预无效。\n\n研究状态：Light；已读全部 3 份指定本地来源，零联网。所有必答项均已核对；缺失证据已明确保留，停止继续检索。\n",
+      "report_hash": "de08d1b0186e173ece225de469328b2086ff46c1b8d07c5abd09e866d75eecf5"
+    }
+  },
+  "scoring": "0=absent/incorrect, 1=major gaps, 2=partial, 3=mostly meets, 4=fully meets"
+}

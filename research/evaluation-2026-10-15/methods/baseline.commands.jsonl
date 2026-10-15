@@ -1,0 +1,3 @@
+{"args": ["read", "<repo>/skills/deep-research/evals/methods/cedar.txt"], "exit_code": 0, "elapsed_seconds": 0.5412726923823357}
+{"args": ["read", "<repo>/skills/deep-research/evals/methods/delta.txt"], "exit_code": 0, "elapsed_seconds": 0.4409388042986393}
+{"args": ["read", "<repo>/skills/deep-research/evals/methods/protocol.txt"], "exit_code": 0, "elapsed_seconds": 0.5287893321365118}

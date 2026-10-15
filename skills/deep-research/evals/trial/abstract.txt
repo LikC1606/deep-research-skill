@@ -1,0 +1,6 @@
+Synthetic fixture — North study abstract, published 2026-05-10.
+This single-site, non-randomized observational study enrolled 12 adults.
+The mean symptom score changed from 8 at baseline to 6 after four weeks.
+There was no concurrent control group. The abstract reports no confidence interval.
+The abstract does not establish a causal treatment effect or generalizability to other sites.
+The full paper is not supplied in this evaluation corpus.

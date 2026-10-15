@@ -52,6 +52,18 @@ v1 = _load_v1()
 base = v1.base
 anysearch = _load_anysearch()
 workspace = _load_workspace()
+
+
+def _load_extension(name):
+    spec = importlib.util.spec_from_file_location(f"deep_research_{name}", Path(__file__).with_name(name + ".py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+reporting = _load_extension("reporting")
+citation_graph = _load_extension("citation_graph")
+evaluation = _load_extension("evaluation")
 ATOM = {"atom": "http://www.w3.org/2005/Atom"}
 EXTRA_STOPWORDS = {"arxiv", "http", "https", "paper", "report", "site", "study", "www"}
 PRACTITIONER_CONTEXT_RE = re.compile(
@@ -1640,7 +1652,19 @@ def _ref_search(
                 )
             raise
         cached = workspace.save_search(request, result)
-    result = cached["result"]
+    public = _public_leads(cached["result"])
+    public.update(
+        cache_hit=cache_hit, search_id=cached["id"], searched_at=cached["searched_at"],
+    )
+    if need is not None:
+        public["need"] = need
+        workspace.record_search_attempt(
+            need, query, cached["id"], cache_hit=cache_hit, new_ref_count=public["new_ref_count"],
+        )
+    return public
+
+
+def _public_leads(result: dict) -> dict:
     rows = []
     discovered = []
     for row in result.get("results", []):
@@ -1668,15 +1692,7 @@ def _ref_search(
         _save_refs(refs)
     public = _hide_urls({key: value for key, value in result.items() if key != "results"})
     public["results"] = rows
-    public.update(
-        cache_hit=cache_hit, search_id=cached["id"], searched_at=cached["searched_at"],
-        new_ref_count=len(new_refs),
-    )
-    if need is not None:
-        public["need"] = need
-        workspace.record_search_attempt(
-            need, query, cached["id"], cache_hit=cache_hit, new_ref_count=len(new_refs),
-        )
+    public["new_ref_count"] = len(new_refs)
     public["next_action"] = (
         "These cards are unread leads, not evidence. Read a matching REF. "
         "Only literal values returned in allowed_citation_urls may be cited."
@@ -1685,6 +1701,42 @@ def _ref_search(
         public["next_action"] += (
             " All candidate REFs were seen before; revisit saved text or pivot to the remaining gap."
         )
+    return public
+
+
+def _follow_papers(source: str, direction: str, offset: int, limit: int, *,
+                   need: str | None = None, refresh: bool = False) -> dict:
+    if need is not None:
+        workspace.require_need(need)
+    if source.startswith("REF-"):
+        with _ref_lock():
+            source = _load_refs().get(source, "")
+    identifier = citation_graph.paper_id(source)
+    if direction not in {"references", "citations"} or offset < 0 or not 1 <= limit <= 20:
+        raise ValueError("direction must be references/citations, offset nonnegative, and limit 1-20")
+    policy = _source_policy()
+    request = {"operation": "follow", "paper": identifier, "direction": direction,
+               "offset": offset, "limit": limit, "provider": "semantic_scholar"}
+    cached = None if refresh else workspace.load_search(request)
+    cache_hit = cached is not None
+    action = f"follow {identifier} {direction} offset={offset}"
+    if cached is None:
+        try:
+            if policy == "local_only":
+                raise RuntimeError("citation discovery is disabled by source_policy=local_only")
+            base._reserve("search")
+            result = citation_graph.fetch_papers(identifier, direction, offset, limit, v1._fetch_bytes)
+        except Exception as exc:
+            if need is not None:
+                workspace.record_search_attempt(need, action, workspace.search_id(request), error=str(exc)[:240])
+            raise
+        cached = workspace.save_search(request, result)
+    public = _public_leads(cached["result"])
+    public.update(cache_hit=cache_hit, search_id=cached["id"], searched_at=cached["searched_at"])
+    if need is not None:
+        public["need"] = need
+        workspace.record_search_attempt(need, action, cached["id"], cache_hit=cache_hit,
+                                        new_ref_count=public["new_ref_count"])
     return public
 
 
@@ -1764,12 +1816,12 @@ def main() -> int:
     open_parser.add_argument("ref")
     open_parser.add_argument("--start-line", type=int, default=1)
     open_parser.add_argument("--count", type=int, default=40)
-    open_parser.add_argument("--version", help="Read a historical content_hash")
+    open_parser.add_argument("--version", help="Read a historical snapshot_id (legacy content_hash also accepted)")
     find_parser = sub.add_parser("find", help="Find terms in a saved source")
     find_parser.add_argument("ref")
     find_parser.add_argument("--term", action="append", nargs="+", required=True)
     find_parser.add_argument("--window", type=int, default=650)
-    find_parser.add_argument("--version")
+    find_parser.add_argument("--version", help="Read a historical snapshot_id or legacy content_hash")
     evidence_parser = sub.add_parser("evidence", help="Save a claim and verify its verbatim quote")
     evidence_parser.add_argument("ref")
     evidence_parser.add_argument("--need", required=True)
@@ -1777,12 +1829,52 @@ def main() -> int:
     evidence_parser.add_argument("--quote", required=True)
     evidence_parser.add_argument("--relation", choices=("supports", "refutes", "context"), required=True)
     evidence_parser.add_argument("--start-line", type=int, default=1)
-    evidence_parser.add_argument("--version")
+    evidence_parser.add_argument("--version", help="Use a historical snapshot_id or legacy content_hash")
     review_parser = sub.add_parser("review", help="Review saved evidence, identical text and mixed relations offline")
     review_parser.add_argument("--need")
     review_parser.add_argument("--claim", help="Match an exact saved claim")
     review_parser.add_argument("--offset", type=int, default=0)
     review_parser.add_argument("--limit", type=int, default=5)
+    follow_parser = sub.add_parser("follow", help="Discover a paper's references or citing papers as unread leads")
+    follow_parser.add_argument("paper")
+    follow_parser.add_argument("--direction", choices=("references", "citations"), default="references")
+    follow_parser.add_argument("--offset", type=int, default=0)
+    follow_parser.add_argument("--limit", type=int, default=10)
+    follow_parser.add_argument("--need")
+    follow_parser.add_argument("--refresh", action="store_true")
+    section_parser = sub.add_parser("section", help="Register or revise a section's Needs and perspective")
+    section_parser.add_argument("id")
+    section_parser.add_argument("--title", required=True)
+    section_parser.add_argument("--need", action="append", required=True, dest="needs")
+    section_parser.add_argument("--perspective")
+    section_parser.add_argument("--order", type=int)
+    section_parser.add_argument("--reason", default="")
+    sub.add_parser("outline", help="Show section coverage, remaining gaps and unassigned Needs")
+    synthesis_parser = sub.add_parser("synthesis", help="Save caller-authored synthesis separately from raw evidence")
+    synthesis_parser.add_argument("section")
+    synthesis_parser.add_argument("--summary", required=True)
+    synthesis_parser.add_argument("--evidence", action="append", required=True, dest="evidence_ids")
+    synthesis_parser.add_argument("--inference", action="append", default=[])
+    synthesis_parser.add_argument("--limitation", action="append", default=[])
+    packet_parser = sub.add_parser("packet", help="Get bounded section evidence, counterevidence and synthesis")
+    packet_parser.add_argument("section")
+    packet_parser.add_argument("--offset", type=int, default=0)
+    packet_parser.add_argument("--limit", type=int, default=5)
+    audit_parser = sub.add_parser("audit", help="Bind draft evidence markers to sentence candidates; flag structural issues")
+    audit_parser.add_argument("report")
+    audit_parser.add_argument("--offset", type=int, default=0)
+    audit_parser.add_argument("--limit", type=int, default=10)
+    compare_parser = sub.add_parser("compare", help="Prepare a blind comparison using a fixed case and two reports")
+    compare_parser.add_argument("case")
+    compare_parser.add_argument("--a", required=True)
+    compare_parser.add_argument("--b", required=True)
+    compare_parser.add_argument("--a-run")
+    compare_parser.add_argument("--b-run")
+    compare_parser.add_argument("--output", required=True)
+    compare_parser.add_argument("--seed", type=int, default=0)
+    score_parser = sub.add_parser("score", help="Validate a reviewer's scores and reveal the comparison labels")
+    score_parser.add_argument("comparison")
+    score_parser.add_argument("--judgments", required=True)
     init_parser = sub.add_parser("init", help="Create a durable task contract, or return the matching one")
     init_parser.add_argument("--deliverable", required=True)
     init_parser.add_argument("--target", required=True)
@@ -1840,6 +1932,26 @@ def main() -> int:
             result = workspace.review_evidence(
                 need=args.need, claim=args.claim, offset=args.offset, limit=args.limit,
             )
+        elif args.command == "follow":
+            result = _follow_papers(args.paper, args.direction, args.offset, args.limit,
+                                    need=args.need, refresh=args.refresh)
+        elif args.command == "section":
+            result = reporting.set_section(workspace, args.id, args.title, args.needs,
+                                            perspective=args.perspective, order=args.order, reason=args.reason)
+        elif args.command == "outline":
+            result = reporting.outline(workspace)
+        elif args.command == "synthesis":
+            result = reporting.save_synthesis(workspace, args.section, args.summary, args.evidence_ids,
+                                               inferences=args.inference, limitations=args.limitation)
+        elif args.command == "packet":
+            result = reporting.packet(workspace, args.section, offset=args.offset, limit=args.limit)
+        elif args.command == "audit":
+            result = reporting.audit_report(workspace, args.report, offset=args.offset, limit=args.limit)
+        elif args.command == "compare":
+            result = evaluation.prepare(workspace, reporting, args.case, args.a, args.b, args.output,
+                                         seed=args.seed, a_run=args.a_run, b_run=args.b_run)
+        elif args.command == "score":
+            result = evaluation.score(workspace, args.comparison, args.judgments)
         elif args.command == "init":
             result = workspace.init_task(args.deliverable, args.target, args.constraint)
         elif args.command == "need":

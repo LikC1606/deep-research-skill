@@ -59,6 +59,14 @@ def _lock():
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
+def _snapshot_id(metadata: dict) -> str:
+    return hashlib.sha256(json.dumps(
+        {key: value for key, value in metadata.items()
+         if key not in {"fetched_at", "body_path", "snapshot_id"}},
+        ensure_ascii=False, sort_keys=True,
+    ).encode("utf-8")).hexdigest()
+
+
 def save_source(ref: str, result: dict, text: str) -> tuple[dict, str]:
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     if not text.strip():
@@ -80,9 +88,14 @@ def save_source(ref: str, result: dict, text: str) -> tuple[dict, str]:
         line_count=text.count("\n") + 1,
         truncated=truncated,
     )
+    # Identical extracted text can have different scope, source URLs or page maps.
+    metadata["snapshot_id"] = _snapshot_id(metadata)
     with _lock():
         _atomic_write(folder / f"{content_hash}.txt", text)
-        _write_json(folder / f"{content_hash}.json", metadata)
+        for version in (metadata["snapshot_id"], content_hash):
+            path = folder / f"{version}.json"
+            if not path.exists():
+                _write_json(path, metadata)
         _write_json(folder / "metadata.json", metadata)
     return metadata, text
 
@@ -90,7 +103,7 @@ def save_source(ref: str, result: dict, text: str) -> tuple[dict, str]:
 def load_source(ref: str, version: str | None = None) -> tuple[dict, str] | None:
     folder = _source_dir(ref)
     if version is not None and not re.fullmatch(r"[0-9a-f]{64}", version):
-        raise ValueError("version must be a source content_hash")
+        raise ValueError("version must be a source snapshot_id or legacy content_hash")
     path = folder / (f"{version}.json" if version else "metadata.json")
     if not path.exists():
         return None
@@ -98,6 +111,10 @@ def load_source(ref: str, version: str | None = None) -> tuple[dict, str] | None
     content_hash = metadata["content_hash"]
     if not re.fullmatch(r"[0-9a-f]{64}", content_hash):
         raise ValueError("invalid cached content hash")
+    if "snapshot_id" in metadata and _snapshot_id(metadata) != metadata["snapshot_id"]:
+        raise ValueError("cached source metadata changed; use read --refresh to retrieve it again")
+    if version is not None and version not in {content_hash, metadata.get("snapshot_id")}:
+        raise ValueError("cached source version does not match the requested snapshot")
     text = (folder / f"{content_hash}.txt").read_text(encoding="utf-8")
     if hashlib.sha256(text.encode("utf-8")).hexdigest() != content_hash:
         raise ValueError("cached source changed; use read --refresh to retrieve it again")
@@ -241,6 +258,31 @@ def _require_task(*, active: bool = False) -> dict:
     return task
 
 
+def _need_reviews(needs: dict, records: list[dict]) -> dict:
+    """Flag changed answer inputs; never infer whether a conclusion is wrong."""
+    current = {}
+    for card in records:
+        current.setdefault(card["need"], set()).add(card["id"])
+    reviews = {}
+    for need, value in needs.items():
+        if value["state"] != "answered":
+            continue
+        basis = value.get("reviewed_evidence_ids")
+        available = current.get(need, set())
+        added = sorted(available - set(basis)) if basis is not None else []
+        removed = sorted(set(basis) - available) if basis is not None else []
+        if basis is not None and not added and not removed:
+            continue
+        reviews[need] = {
+            "review_basis_unknown": basis is None,
+            "new_evidence_count": len(added) if basis is not None else None,
+            "new_evidence_ids": added[:10], "new_evidence_ids_truncated": len(added) > 10,
+            "removed_evidence_count": len(removed) if basis is not None else None,
+            "removed_evidence_ids": removed[:10], "removed_evidence_ids_truncated": len(removed) > 10,
+        }
+    return reviews
+
+
 def _save_task(task: dict) -> dict:
     task["updated_at"] = datetime.now(timezone.utc).isoformat()
     _write_json(root() / "task.json", task)
@@ -317,6 +359,10 @@ def set_need(
             )
         ):
             raise ValueError("answered requires a conclusion note and supports/refutes evidence")
+        if state == "answered":
+            record["reviewed_evidence_ids"] = sorted(
+                card["id"] for card in evidence.values() if card["need"] == need
+            )
         if previous == record:
             return {"id": need, **record}
         task["needs"][need] = record
@@ -349,6 +395,9 @@ def stop_task(reason: str, *, complete: bool = False) -> dict:
             need["state"] != "answered" for need in task["needs"].values()
         )):
             raise ValueError("complete requires every registered checklist Need to be answered")
+        if complete and _need_reviews(task["needs"], list(_evidence().values())):
+            raise ValueError("complete requires reviewing changed or untracked evidence; inspect status, then "
+                             "re-confirm each affected Need with --state answered and a conclusion note")
         task["state"] = "complete" if complete else "incomplete"
         task["last_stop"] = {
             "state": task["state"], "reason": reason.strip(),
@@ -447,6 +496,8 @@ def record_evidence(
         "source": metadata.get("url"),
         "locator": _locator(text, start, start + len(quote), metadata),
     }
+    if "snapshot_id" in metadata:
+        record["snapshot_id"] = metadata["snapshot_id"]
     record["id"] = "EV-" + hashlib.sha256(
         json.dumps(record, ensure_ascii=False, sort_keys=True).encode("utf-8")
     ).hexdigest()[:16].upper()
@@ -491,7 +542,8 @@ def status() -> dict:
         "review_note": "Content counts do not establish independence; use review to inspect saved evidence and scope.",
         "next_action": "Review remaining Needs and conflicts; recorded relations are caller assessments.",
     }
-    summary.update(task=None, remaining_needs=[], next_need=None, completion_ready=False)
+    summary.update(task=None, remaining_needs=[], next_need=None, completion_ready=False,
+                   needs_requiring_review=[], need_review_details={})
     if task is None:
         return summary
     summary["task"] = {
@@ -500,20 +552,25 @@ def status() -> dict:
         "search_count": len(task.get("searches", [])),
         "recent_searches": task.get("searches", [])[-10:],
     }
+    reviews = _need_reviews(task["needs"], records)
     remaining = sorted(
-        (key for key, need in task["needs"].items() if need["state"] != "answered"),
+        (key for key, need in task["needs"].items() if need["state"] != "answered" or key in reviews),
         key=lambda key: task["needs"][key]["priority"],
     )
     next_need = next((key for key in remaining if task["needs"][key]["state"] != "blocked"), None)
     summary.update(
         remaining_needs=remaining, next_need=next_need,
         completion_ready=bool(task["needs"]) and not remaining,
+        needs_requiring_review=[need for need in remaining if need in reviews], need_review_details=reviews,
         unregistered_evidence_needs=sorted(set(by_need) - set(task["needs"])),
     )
     if task["state"] != "active":
-        summary["next_action"] = "Task is stopped; review last_stop and remaining_needs before resume."
+        summary["next_action"] = "Task is stopped; review last_stop, remaining_needs and needs_requiring_review before resume."
     elif next_need:
-        summary["next_action"] = f"Continue {next_need}; use its proof and gap note to choose the next action."
+        if next_need in reviews:
+            summary["next_action"] = f"Review {next_need}'s evidence and scope, then explicitly re-confirm or revise its answer."
+        else:
+            summary["next_action"] = f"Continue {next_need}; use its proof and gap note to choose the next action."
     elif remaining:
         summary["next_action"] = "All remaining Needs are blocked; review gaps or stop with an incomplete reason."
     elif not task["needs"]:

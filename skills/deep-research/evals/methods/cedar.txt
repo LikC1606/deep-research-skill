@@ -1,0 +1,4 @@
+Synthetic fixture — Cedar authors' experiment table.
+Dataset Harbor-A. Accuracy 91%. Median latency 20 ms per item.
+Hardware: one CPU. Batch size: 1. Timing includes preprocessing and inference.
+Energy consumption was not measured. No result for Harbor-B is reported.

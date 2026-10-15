@@ -1,0 +1,4 @@
+Synthetic fixture — Delta authors' experiment table.
+Dataset Harbor-B. Accuracy 94%. Median latency 8 ms per item.
+Hardware: one GPU. Batch size: 32. Timing includes inference only.
+Energy consumption was not measured. No result for Harbor-A is reported.

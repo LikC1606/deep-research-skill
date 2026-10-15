@@ -1,0 +1,16 @@
+{
+  "id": "abstract-mirror-and-scope",
+  "question": "评价 North 的干预结果是否足以支持推广到多站点人群：报告效应、样本、站点、因果与外推边界，并核对独立验证是否成立。仅使用提供的本地语料。",
+  "budget": {"network_calls": 0, "source_reads": 4},
+  "checklist": [
+    {"id": "T1", "requirement": "12 人、单站点、非随机观察设计"},
+    {"id": "T2", "requirement": "均值从 8 降到 6，区分变化与因果归因"},
+    {"id": "T3", "requirement": "镜像报道不是独立验证，后续研究仍无结果"},
+    {"id": "T4", "requirement": "多站点推广建议与缺失证据"}
+  ],
+  "sources": [
+    {"id": "ABSTRACT", "path": "abstract.txt"},
+    {"id": "MIRROR", "path": "mirror.txt"},
+    {"id": "REGISTRY", "path": "registry.txt"}
+  ]
+}

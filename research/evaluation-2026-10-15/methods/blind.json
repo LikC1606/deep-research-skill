@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "case_id": "benchmark-comparability-and-missingness",
+  "case_hash": "1b4a83d92803a15c6e18b309c60dc640f1ba462559c9d638e40da92645c6e487",
+  "question": "比较 Cedar 与 Delta 的准确率、延迟、算力和能耗，判断能否据现有证据宣称 Delta 更快更优，并提出公平复测方案。全部字段须保留；仅用本地语料。",
+  "checklist": [
+    {
+      "id": "M1",
+      "requirement": "保留双方准确率、延迟和对应数据集"
+    },
+    {
+      "id": "M2",
+      "requirement": "比较硬件、batch 与测量范围差异"
+    },
+    {
+      "id": "M3",
+      "requirement": "双方能耗均未提供，不杜撰数值"
+    },
+    {
+      "id": "M4",
+      "requirement": "不能直接排序，并提出同数据/硬件/batch/计时范围的复测"
+    }
+  ],
+  "corpus": [
+    {
+      "id": "C",
+      "path": "cedar.txt",
+      "hash": "6a776fc17a231908192c9d33d851f48adbfa6f6f86a541c8a3fac29c27b6329d",
+      "text": "Synthetic fixture — Cedar authors' experiment table.\nDataset Harbor-A. Accuracy 91%. Median latency 20 ms per item.\nHardware: one CPU. Batch size: 1. Timing includes preprocessing and inference.\nEnergy consumption was not measured. No result for Harbor-B is reported.\n"
+    },
+    {
+      "id": "D",
+      "path": "delta.txt",
+      "hash": "ce4c1b40cc9027ceb9108cb45debfa1ad70b214a38eea7f9b6039a9e841e2c76",
+      "text": "Synthetic fixture — Delta authors' experiment table.\nDataset Harbor-B. Accuracy 94%. Median latency 8 ms per item.\nHardware: one GPU. Batch size: 32. Timing includes inference only.\nEnergy consumption was not measured. No result for Harbor-A is reported.\n"
+    },
+    {
+      "id": "PROTOCOL",
+      "path": "protocol.txt",
+      "hash": "7c2a03b611d0c4b5f06db895514defd37f0dc2ecb6ddb37d70c440b2647f0833",
+      "text": "Synthetic fixture — comparison protocol.\nHarbor-A and Harbor-B use different examples and label distributions.\nAccuracy percentages across these two datasets do not establish a ranking of methods.\nLatency comparisons must use the same hardware, batch size, warmup and measurement boundary.\nReport preprocessing and inference together, plus separate components when available.\nEnergy measurements require the same measurement interval and include relevant hardware.\n"
+    }
+  ],
+  "budget": {
+    "network_calls": 0,
+    "source_reads": 4
+  },
+  "rubric": {
+    "completeness": "Cover every checklist item; disclose missing facts without inventing values.",
+    "citation_support": "Check actual passages, units, dates and scope; a reachable citation is insufficient.",
+    "source_quality": "Use direct sources; do not count mirrors as independent or abstracts as full experiments.",
+    "synthesis": "Explain conflicts, mechanisms and actionable limits instead of listing source summaries."
+  },
+  "reports": {
+    "A": {
+      "text": "# Cedar 与 Delta 的性能比较\n\n现有证据**不能支持“Delta 更快更优”或直接给两种方法排序**。Delta 报告的准确率数值更高、延迟数值更低，但数据集、硬件、batch 和计时范围同时不同；能耗均没有实测结果。[C:L2-L4][D:L2-L4][PROTOCOL:L2-L6]\n\n| 字段 | Cedar | Delta |\n| --- | --- | --- |\n| 数据集 | Harbor-A | Harbor-B |\n| 准确率 | 91% | 94% |\n| 单条延迟 | 中位数 20 ms/item | 中位数 8 ms/item |\n| 算力配置 | 1 个 CPU | 1 个 GPU |\n| Batch size | 1 | 32 |\n| 计时范围 | 预处理与推理 | 仅推理 |\n| 能耗 | 未测量，无数值 | 未测量，无数值 |\n| 对另一数据集的结果 | 未报告 Harbor-B 结果 | 未报告 Harbor-A 结果 |\n| 证据 | [C:L2-L4] | [D:L2-L4] |\n\n表中保留的是已报告配置和测量结果。“1 个 CPU／GPU”只描述硬件配置，不能据此量化或比较计算量、算力利用率和单位计算成本；所给表格没有这些指标。[C:L1-L4][D:L1-L4]\n\n比较受两组条件差异限制。首先，Harbor-A 与 Harbor-B 的样本和标签分布不同，跨数据集的 91% 与 94% 不能建立方法排名。[PROTOCOL:L2-L3] 其次，20 ms 与 8 ms 分别来自 CPU、batch 1、包含预处理的测量，以及 GPU、batch 32、仅推理的测量；现有证据无法分离方法、硬件、批量和计时边界各自的影响。[C:L2-L3][D:L2-L3] 因而不能把这些数值解释为 Delta 的速度优势，也不能把缺失的能耗当作零或据硬件类型推算能耗。\n\n建议按以下方案公平复测：\n\n1. 让两种方法分别在相同的 Harbor-A、Harbor-B 测试集和划分上评估，使用相同标签与准确率计算方式，逐数据集报告结果，避免跨数据集排序。\n2. 在同一硬件配置、相同 batch、相同预热与计时边界下运行两者。可以分别设置 batch 1 和 batch 32 两组实验，但每组内必须成对一致。统一报告“预处理＋推理”的单条延迟，并在可用时分列两部分；重复测量并报告中位数及波动。相同硬件、batch、预热、边界与分项计时要求来自比较协议。[PROTOCOL:L4-L5]\n3. 在相同测量区间、处理相同数量样本时测量相关硬件能耗，报告总能耗及每条记录能耗。协议要求区间一致并包含相关硬件；这里的归一化指标是复测建议，当前没有可填入的实测数值。[PROTOCOL:L6]\n\n只有上述共同条件下获得成对结果，才可判断准确率与速度的取舍；能耗和计算效率仍须各自的测量支持。限制是当前两份实验表缺少共同数据集结果和能耗测量，协议提供比较规则，并未提供复测结果。[C:L4][D:L4][PROTOCOL:L2-L6]\n\n研究状态：Light；已读全部 3 份指定本地来源，零联网。准确率、延迟、数据集、硬件、batch、计时范围和能耗字段均已保留，缺失项明确标记；停止继续检索。\n",
+      "report_hash": "1a762d41f1f02b0f3a02194aaa0b2727d9394fed6ba7873b774dad47ddfb186b"
+    },
+    "B": {
+      "text": "# 方法性能与公平比较评估\n\n**现有证据不能支持“Delta更快更优”。** 两者准确率来自不同数据集，延迟又使用不同硬件、batch及计时范围；能耗均未测量，不能进行方法优劣、算力效率或能效排序。[C:L2-L4][D:L2-L4][PROTOCOL:L2-L6]\n\n下表保留所有比较字段。E表示正文直接支持；?表示没有可比较的数值，不能补估。\n\n| 字段 | Cedar | Delta |\n| --- | --- | --- |\n| 数据集（E） | Harbor-A [C:L2] | Harbor-B [D:L2] |\n| 准确率（E） | 91%，仅对应Harbor-A [C:L2] | 94%，仅对应Harbor-B [D:L2] |\n| 延迟（E） | 中位数20 ms/条 [C:L2] | 中位数8 ms/条 [D:L2] |\n| 硬件/算力配置（E） | 1个CPU [C:L3] | 1个GPU [D:L3] |\n| batch（E） | 1 [C:L3] | 32 [D:L3] |\n| 计时范围（E） | 预处理＋推理 [C:L3] | 仅推理 [D:L3] |\n| 能耗（?） | 未测量、无数值 [C:L4] | 未测量、无数值 [D:L4] |\n| 对方数据集上的准确率（?） | 未报告Harbor-B结果 [C:L4] | 未报告Harbor-A结果 [D:L4] |\n\n准确率94%与91%不能形成方法排名：Harbor-A与Harbor-B的样例及标签分布不同，协议也明确指出跨这两套数据的百分比不能建立方法优劣关系。[PROTOCOL:L2-L3] 延迟8 ms与20 ms同样不能识别方法本身的速度差异：除GPU/CPU与batch差异外，Delta还未计入Cedar包含的预处理时间。[C:L3][D:L3] 因此前述分数和耗时只能描述各自实验配置，不能据此宣称同条件下准确率更高或速度提升。硬件数量也未提供等价的数值算力或计算量，无法从“1个GPU”与“1个CPU”推出算力效率；未测能耗则无法判断能效。[C:L3-L4][D:L3-L4]\n\n建议采用以下公平复测方案（研究建议，非已有结果）：\n\n1. 让两种方法运行同一测试集、同一划分与准确率定义；若要覆盖Harbor-A和Harbor-B，则双方都测两套数据，并逐数据集报告。\n2. 固定相同硬件、batch、预热方式和计时边界。统一报告预处理＋推理的总延迟，并在可获得时拆分两个组件，避免把推理耗时和完整流程耗时混比。[PROTOCOL:L4-L5]\n3. 在相同测量区间、覆盖相关硬件的范围内实测能耗，明确记录硬件配置及能耗单位；补测完成前保留能耗为空缺，不以延迟或硬件类型代算。[PROTOCOL:L6][C:L4][D:L4]\n\n综合而言，数据分布差异阻断准确率排序，执行配置和测量边界差异阻断速度归因，能耗缺失阻断能效比较；需要共同协议下的交叉结果才能判断取舍。[C:L2-L4][D:L2-L4][PROTOCOL:L2-L6] 本报告仅评价所供实验表与协议，没有原始样本、重复测量或完整硬件规格，因此不能量化各个差异因素的贡献，也不能预判复测赢家。\n\n研究状态：Deep；已读3份本地来源，未联网。全部指标字段与缺失项已保留，可比性和复测要求已覆盖，证据足够后停止。\n",
+      "report_hash": "554e42bdbdd08739c079da61fcd2b379d1d84b86bf2c909a41a5980e39407c0d"
+    }
+  },
+  "scoring": "0=absent/incorrect, 1=major gaps, 2=partial, 3=mostly meets, 4=fully meets"
+}

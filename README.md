@@ -36,6 +36,10 @@ Deliverable -> Need Map -> Search -> Read -> Pivot -> Synthesis
 - **断点续研**：保存完整 Need 清单、进度、失败尝试和停止原因；恢复时显示剩余缺口，完成一个分支不会结束整项研究。
 - **减少重复检索**：相同查询复用任务内结果，支持显式刷新；记录查询所属 Need，并标出重复来源。
 - **证据回查**：按 Need 或 claim 离线分页查看摘录，提示相同正文与支持/反驳并存的记录，保留来源和历史版本。
+- **分章综合与提纲修订**：章节关联完整 Needs，综合与原文分开保存；证据包包含反驳材料，依据变化提示摘要过期。
+- **报告引用审计**：草稿逐句绑定证据，检查快照、定位和未读链接；语义支持由审阅者核对。
+- **论文引用追踪**：按需发现参考文献和后续引用，沿用未读线索、缓存和预算规则。
+- **固定语料盲评**：附带三个回归案例，随机展示两份实际报告，记录评审理由、覆盖与成本。
 
 ## Competition Research
 
@@ -118,6 +122,7 @@ python scripts/sync_skill.py --check
 ```
 
 Per-run caches and lock files are excluded. For saved-source commands and evidence records, see [workspace and evidence](./skills/deep-research/references/workspace-and-evidence.md).
+For chapter packets, citation traversal, draft auditing and blind report comparisons, see [reporting and evaluation](./skills/deep-research/references/reporting-and-evaluation.md).
 
 ## License
 

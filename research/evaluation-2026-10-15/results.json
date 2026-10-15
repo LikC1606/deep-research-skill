@@ -1,0 +1,254 @@
+{
+  "date": "2026-10-15",
+  "protocol": {
+    "report_generation": "Two independent agents, same inherited model/configuration, no model overrides; three cases per agent in the same order.",
+    "review": "A separate agent received only blind.json and the judgment template, not condition identities, version instructions or expected answers.",
+    "source_policy": "local_only; same fixed corpus and per-case read budget",
+    "measurement_scope": "Instrumented CLI invocations and read calls; model tokens, inference cost and full wall time were not measured.",
+    "limits": "Three small synthetic cases, one report per condition and one reviewer. No general benchmark or causal quality-gain claim. Both agents used read only (baseline also requested CLI help); chapter workflows were not exercised by these report tasks."
+  },
+  "conditions": {
+    "baseline": {
+      "git_commit": "d739fcb",
+      "skill_tree_sha256": "8e8517df2f66050504188fca25fcb3bfe1e202361df5c9ed3e156a1d3a68da27"
+    },
+    "candidate": {
+      "state": "working-tree skill for this iteration",
+      "skill_tree_sha256": "a22573639b639d9b10d6ebaa4c02064bf056b6421d4f6b2ffec614ae60639b57"
+    }
+  },
+  "cases": [
+    {
+      "case": "pricing",
+      "case_id": "pricing-version-and-units",
+      "case_hash": "9bc537c2cdb6712c34ed9d358614f1e73218876348636a45b3c3df30bfe1ab37",
+      "seed": 42,
+      "preferred": "tie",
+      "preferred_condition": "tie",
+      "reviewer": "independent-agent-blind-review",
+      "reason": "平局。A、B均正确计算现行 Atlas USD 14/月、Birch USD 12/月及税前差价 USD 2，核对旧方案 USD 6/月与 2026-09-01 换版，且明确镜像不独立、GB-month 假设、税率缺失和负载变化限制。B细分新旧账单增加的处理费与存储费，A明确区分单价证据与计算，但二者对任务的正确性、完整性和建议边界没有实质差距。",
+      "reports": {
+        "A": {
+          "condition": "candidate",
+          "path": "pricing/candidate.md",
+          "report_hash": "ddfd451b583f07c80aac54d594f907c2797597efc00dfb4d7da4428bfb91743d",
+          "scores": {
+            "completeness": 4,
+            "citation_support": 4,
+            "source_quality": 4,
+            "synthesis": 4
+          },
+          "direct_coverage": 0.25,
+          "checklist": {
+            "P1": "inference",
+            "P2": "inference",
+            "P3": "direct",
+            "P4": "inference"
+          },
+          "measurements": {
+            "provenance": "run_measurements",
+            "values": {
+              "source_reads": 4,
+              "network_calls": 0,
+              "cli_calls": 4,
+              "cli_elapsed_seconds": 2.4699508119374514,
+              "measurement_scope": "CLI invocations only; no model token or full wall-time measurement"
+            }
+          },
+          "commands": {
+            "read": 4
+          },
+          "failed_commands": 0
+        },
+        "B": {
+          "condition": "baseline",
+          "path": "pricing/baseline.md",
+          "report_hash": "fe7f4940d42c8d4f0f1bbc829b25b6b653bf0079adb0fc6e27870eb0a7a9ed74",
+          "scores": {
+            "completeness": 4,
+            "citation_support": 4,
+            "source_quality": 4,
+            "synthesis": 4
+          },
+          "direct_coverage": 0.25,
+          "checklist": {
+            "P1": "inference",
+            "P2": "inference",
+            "P3": "direct",
+            "P4": "inference"
+          },
+          "measurements": {
+            "provenance": "run_measurements",
+            "values": {
+              "source_reads": 4,
+              "network_calls": 0,
+              "cli_calls": 5,
+              "cli_elapsed_seconds": 2.7464859187602997,
+              "measurement_scope": "CLI invocations only; no model token or full wall-time measurement"
+            }
+          },
+          "commands": {
+            "--help": 1,
+            "read": 4
+          },
+          "failed_commands": 0
+        }
+      }
+    },
+    {
+      "case": "trial",
+      "case_id": "abstract-mirror-and-scope",
+      "case_hash": "1e74397425cb2962e805ca13764a26a005c7cd36b8765404a0710b94db704122",
+      "seed": 43,
+      "preferred": "tie",
+      "preferred_condition": "tie",
+      "reviewer": "independent-agent-blind-review",
+      "reason": "平局。两份报告均准确保留12名成年人、单站点、非随机观察设计、四周均值8至6和无同期对照，不把前后变化当因果疗效；均正确剔除镜像和未招募的120人登记计划作为独立验证。A更明确登记状态的时间截点，B补充正确的25%描述性变化及明确未检验的替代解释；这些差异不影响任务完成度和有界推广判断。",
+      "reports": {
+        "A": {
+          "condition": "candidate",
+          "path": "trial/candidate.md",
+          "report_hash": "b6aaf33978a0aacff5dacc7d5dc403deb4413688044f9bc557cf7c07f2cdf88c",
+          "scores": {
+            "completeness": 4,
+            "citation_support": 4,
+            "source_quality": 4,
+            "synthesis": 4
+          },
+          "direct_coverage": 0.75,
+          "checklist": {
+            "T1": "direct",
+            "T2": "direct",
+            "T3": "direct",
+            "T4": "inference"
+          },
+          "measurements": {
+            "provenance": "run_measurements",
+            "values": {
+              "source_reads": 3,
+              "network_calls": 0,
+              "cli_calls": 3,
+              "cli_elapsed_seconds": 1.8067473527044058,
+              "measurement_scope": "CLI invocations only; no model token or full wall-time measurement"
+            }
+          },
+          "commands": {
+            "read": 3
+          },
+          "failed_commands": 0
+        },
+        "B": {
+          "condition": "baseline",
+          "path": "trial/baseline.md",
+          "report_hash": "de08d1b0186e173ece225de469328b2086ff46c1b8d07c5abd09e866d75eecf5",
+          "scores": {
+            "completeness": 4,
+            "citation_support": 4,
+            "source_quality": 4,
+            "synthesis": 4
+          },
+          "direct_coverage": 0.75,
+          "checklist": {
+            "T1": "direct",
+            "T2": "direct",
+            "T3": "direct",
+            "T4": "inference"
+          },
+          "measurements": {
+            "provenance": "run_measurements",
+            "values": {
+              "source_reads": 3,
+              "network_calls": 0,
+              "cli_calls": 3,
+              "cli_elapsed_seconds": 1.5675316471606493,
+              "measurement_scope": "CLI invocations only; no model token or full wall-time measurement"
+            }
+          },
+          "commands": {
+            "read": 3
+          },
+          "failed_commands": 0
+        }
+      }
+    },
+    {
+      "case": "methods",
+      "case_id": "benchmark-comparability-and-missingness",
+      "case_hash": "1b4a83d92803a15c6e18b309c60dc640f1ba462559c9d638e40da92645c6e487",
+      "seed": 44,
+      "preferred": "tie",
+      "preferred_condition": "tie",
+      "reviewer": "independent-agent-blind-review",
+      "reason": "平局。两份报告完整且准确保留双方数据集、准确率、中位单条延迟、CPU/GPU、batch、计时范围和能耗未测状态，均据协议拒绝跨条件排序并提出同数据、同硬件、同batch、同预热与计时边界的复测。A增加重复测量和单位样本能耗建议，B更紧凑地串起各项可比性障碍；均明确这些为未来方案，未产生实质质量差距。",
+      "reports": {
+        "A": {
+          "condition": "baseline",
+          "path": "methods/baseline.md",
+          "report_hash": "1a762d41f1f02b0f3a02194aaa0b2727d9394fed6ba7873b774dad47ddfb186b",
+          "scores": {
+            "completeness": 4,
+            "citation_support": 4,
+            "source_quality": 4,
+            "synthesis": 4
+          },
+          "direct_coverage": 0.75,
+          "checklist": {
+            "M1": "direct",
+            "M2": "direct",
+            "M3": "direct",
+            "M4": "inference"
+          },
+          "measurements": {
+            "provenance": "run_measurements",
+            "values": {
+              "source_reads": 3,
+              "network_calls": 0,
+              "cli_calls": 3,
+              "cli_elapsed_seconds": 1.5110008288174868,
+              "measurement_scope": "CLI invocations only; no model token or full wall-time measurement"
+            }
+          },
+          "commands": {
+            "read": 3
+          },
+          "failed_commands": 0
+        },
+        "B": {
+          "condition": "candidate",
+          "path": "methods/candidate.md",
+          "report_hash": "554e42bdbdd08739c079da61fcd2b379d1d84b86bf2c909a41a5980e39407c0d",
+          "scores": {
+            "completeness": 4,
+            "citation_support": 4,
+            "source_quality": 4,
+            "synthesis": 4
+          },
+          "direct_coverage": 0.75,
+          "checklist": {
+            "M1": "direct",
+            "M2": "direct",
+            "M3": "direct",
+            "M4": "inference"
+          },
+          "measurements": {
+            "provenance": "run_measurements",
+            "values": {
+              "source_reads": 3,
+              "network_calls": 0,
+              "cli_calls": 3,
+              "cli_elapsed_seconds": 1.8556145131587982,
+              "measurement_scope": "CLI invocations only; no model token or full wall-time measurement"
+            }
+          },
+          "commands": {
+            "read": 3
+          },
+          "failed_commands": 0
+        }
+      }
+    }
+  ],
+  "pairwise_results": {
+    "tie": 3
+  }
+}

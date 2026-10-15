@@ -1,0 +1,5 @@
+Synthetic evaluation fixture — Atlas official price notice.
+Published 2026-08-15. Effective 2026-09-01.
+Atlas charges USD 4 per million processed records and USD 2 per GB-month retained.
+No free allowance or minimum charge applies. Prices exclude taxes.
+These rates describe billing, not processing speed or service reliability.

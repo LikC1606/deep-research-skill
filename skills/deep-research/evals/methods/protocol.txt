@@ -1,0 +1,6 @@
+Synthetic fixture — comparison protocol.
+Harbor-A and Harbor-B use different examples and label distributions.
+Accuracy percentages across these two datasets do not establish a ranking of methods.
+Latency comparisons must use the same hardware, batch size, warmup and measurement boundary.
+Report preprocessing and inference together, plus separate components when available.
+Energy measurements require the same measurement interval and include relevant hardware.
