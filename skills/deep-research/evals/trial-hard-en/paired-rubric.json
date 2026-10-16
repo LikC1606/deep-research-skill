@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "criteria": [
+    {
+      "id": "T1",
+      "requirement": "Identify what the interim enrollment count represents.",
+      "reference": "S3's 18 participants are an interim enrollment snapshot from 2026-06-01 while follow-up and analysis were ongoing. The abstract presents no final group outcomes; 18 is not the final randomized or analyzed population.",
+      "source_ids": ["S3"],
+      "critical": true
+    },
+    {
+      "id": "T2",
+      "requirement": "State the final randomized population and allocation.",
+      "reference": "The 2026-08-10 final report randomized 24 participants, 12 to intervention and 12 to control.",
+      "source_ids": ["S1"],
+      "critical": true
+    },
+    {
+      "id": "T3",
+      "requirement": "State the population represented by the six-week outcome means.",
+      "reference": "The analysis included 10 intervention and 11 control participants, 21 in total. The reported means describe those analyzed participants, not all 24 randomized participants or the interim 18.",
+      "source_ids": ["S1"],
+      "critical": true
+    },
+    {
+      "id": "T4",
+      "requirement": "Reconcile the numerical gap between randomized and analyzed populations.",
+      "reference": "24 - (10 + 11) = 3 randomized participants not represented in the six-week analysis: 12 - 10 = 2 intervention and 12 - 11 = 1 control. These are derived count differences, not evidence that adverse events or any other specific cause produced the missing observations.",
+      "source_ids": ["S1", "S2"],
+      "critical": true
+    },
+    {
+      "id": "T5",
+      "requirement": "Preserve the stated handling of missing follow-up observations.",
+      "reference": "The protocol excludes missing follow-up observations from the descriptive analysis and plans no imputation. The report cannot be described as an imputed outcome analysis covering all randomized participants.",
+      "source_ids": ["S1", "S2"],
+      "critical": true
+    },
+    {
+      "id": "T6",
+      "requirement": "State the two observed mean changes with their endpoint, direction and unit.",
+      "reference": "Mean six-week systolic blood-pressure change from baseline is -6 mmHg in intervention and -4 mmHg in control. These are mean changes, not final absolute blood pressures or percentage changes.",
+      "source_ids": ["S1"],
+      "critical": true
+    },
+    {
+      "id": "T7",
+      "requirement": "Calculate and correctly interpret the between-group difference in mean change.",
+      "reference": "Intervention minus control change is -6 - (-4) = -2 mmHg: the analyzed intervention group had a 2 mmHg larger observed reduction. This is a descriptive calculation, not a 2 percent reduction or an established causal effect.",
+      "source_ids": ["S1"],
+      "critical": true
+    },
+    {
+      "id": "T8",
+      "requirement": "Represent the pilot's stated design and primary objective.",
+      "reference": "S2 describes an unblinded randomized single-site feasibility pilot with a six-week visit. Feasibility is the primary objective and no confirmatory efficacy test was prespecified. It is not a blinded confirmatory efficacy trial.",
+      "source_ids": ["S2"],
+      "critical": false
+    },
+    {
+      "id": "T9",
+      "requirement": "Keep unavailable statistical evidence distinct from a demonstrated significant benefit.",
+      "reference": "The final report provides no standard errors, confidence intervals or significance tests. Neither statistical significance nor a numerical confidence interval can be established from the two descriptive means alone; do not invent those values.",
+      "source_ids": ["S1", "S2"],
+      "critical": true
+    },
+    {
+      "id": "T10",
+      "requirement": "Give an efficacy conclusion bounded by the pilot evidence.",
+      "reference": "The observed descriptive contrast may motivate further study, but this small unblinded single-site feasibility analysis with excluded missing observations does not establish broad clinical effectiveness or prove the bulletin's blood-pressure benefit claim. Preserve the distinction between an observed group difference and a clinical or causal conclusion.",
+      "source_ids": ["S1", "S2", "S5"],
+      "critical": true
+    },
+    {
+      "id": "T11",
+      "requirement": "State what can be concluded about adverse events and safety from the public materials.",
+      "reference": "S4 says the public materials contain no adverse-event table, event counts, ascertainment procedure or safety analysis. The corpus therefore does not establish the event count or clinical safety; unavailable reporting is not zero adverse events or proof of no safety concerns.",
+      "source_ids": ["S4"],
+      "critical": true
+    },
+    {
+      "id": "T12",
+      "requirement": "Represent the later bulletin's actual source and independence.",
+      "reference": "The 2026-08-12 bulletin links only to the June abstract and repeats its enrollment count of 18. It supplies no new measurements, safety data or statistical analysis, so its later date and headline are neither a later primary analysis nor independent corroboration of efficacy or safety.",
+      "source_ids": ["S3", "S5"],
+      "critical": false
+    }
+  ]
+}

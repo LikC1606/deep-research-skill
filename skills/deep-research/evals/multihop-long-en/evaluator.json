@@ -1,0 +1,52 @@
+{
+  "criteria": [
+    {
+      "id": "R1",
+      "weight": 2,
+      "requirement": "Resolve the alias through the archive and artifact registry, preserving version and mode identity",
+      "reference": "S1's Needle-17 alias maps through S2 to ARC-6E, then through S3 to Trivenn Queue 2.4.1, package tq-2.4.1-linux-x64, digest tq241-c17e-9b42, persistent barrier on. ARC-6F/Needle-17-fast, the no-barrier sibling, and version 2.4.0 are not the requested object. Accepted pilot handoff does not mean a workload acceptance gate passed. The alias-to-product conclusion needs the linked documents, not just a product name found in the performance report.",
+      "source_ids": ["S1", "S2", "S3"],
+      "evidence_groups": [["S1"], ["S2"], ["S3"]]
+    },
+    {
+      "id": "R2",
+      "weight": 3,
+      "requirement": "Apply the late accounting and latency corrections and explain why the later-dated digest does not override them",
+      "reference": "S4 Appendix C signed 2026-08-24 supersedes original candidate primary-only means 18/40 with billable all-worker means 24/60 CPU-ms per accepted clean/retry job. B-11 remains 30/90. Corrected candidate pooled queue-residence p95 is 168 ms. The 118 ms value is service-time p95, excluding requeue wait; it is not queue-residence p95. S5 is dated 2026-08-28 but reproduces the 2026-08-20 excerpt without inspecting appendices or rerunning. It is neither a newer measurement nor independent corroboration. A source citation supporting CPU does not also support a claim about queue-residence latency or commercial rates.",
+      "source_ids": ["S3", "S4", "S5"],
+      "evidence_groups": [["S3"], ["S4"], ["S5"]]
+    },
+    {
+      "id": "R3",
+      "weight": 3,
+      "requirement": "Calculate weighted CPU and monthly quantities with accepted-job denominators and complete units",
+      "reference": "Use S1's 0.8/0.2 accepted-job mix and S4's corrected all-attempt/all-worker class means: B-11=0.8*30+0.2*90=42 CPU-ms/accepted job; candidate=0.8*24+0.2*60=31.2 CPU-ms/accepted job. September volume=2,000,000*30=60,000,000 accepted jobs. CPU hours are ms/job*jobs/1000/3600: B-11=700 CPU-h and candidate=520 CPU-h. CPU use is 180 CPU-h or 25.7142857% lower, a calculated descriptive forecast, not a source quotation or a latency reduction. Failed attempts and helper CPU must not be omitted or double-counted. The source does not have to print these derived totals verbatim, but the report must show or clearly describe the derivation and cite its premises.",
+      "source_ids": ["S1", "S4", "S6"],
+      "evidence_groups": [["S1"], ["S4"], ["S6"]]
+    },
+    {
+      "id": "R4",
+      "weight": 3,
+      "requirement": "Join the current billing schedule to the workload and distinguish CPU savings from total scoped monthly savings",
+      "reference": "S6 L-44 applies to September: USD0.40/CPU-h, fixed fee USD0 for B-11 and USD60 for candidate, continuously aggregated CPU with final cents rounding. B-11=700*0.40+0=USD280.00/month. Candidate=520*0.40+60=USD268.00/month. Scoped monthly saving=USD12.00 and (280-268)/280*100=4.2857143%, about 4.29%. Candidate CPU-only spending is USD208.00, but that is not its CPU-plus-license total. The old USD0.35 rate and waiver, per-attempt billing, adding shared excluded costs, and rounding each job or hour are invalid. Arithmetic must connect measured means, actual workload and the dated rate; a citation to only one component is insufficient for the total.",
+      "source_ids": ["S1", "S4", "S6"],
+      "evidence_groups": [["S1"], ["S4"], ["S6"]]
+    },
+    {
+      "id": "R5",
+      "weight": 3,
+      "requirement": "Evaluate both necessary rollout gates with matching scope and a bounded recommendation",
+      "reference": "CT-91 requires at least 20% lower scoped monthly CPU-plus-license spending and queue-residence p95 <=150 ms. Forecast 4.29% total savings is below 20%; reported matching candidate p95 168 ms is above 150 ms. Both gates fail under the supplied model. The CPU-only 25.71% reduction cannot substitute for total-cost acceptance; the service-time 118 ms cannot substitute for queue residence. Recommend against unconditional CT-91 approval on current evidence, with a scoped rerun or revised terms as possible future work, without inventing a later passing result. The measurement is a pooled descriptive benchmark on synthetic traffic; no published production predictive interval or guarantee is established.",
+      "source_ids": ["S1", "S3", "S4", "S6"],
+      "evidence_groups": [["S1"], ["S3"], ["S4"], ["S6"]]
+    },
+    {
+      "id": "R6",
+      "weight": 2,
+      "requirement": "Keep unavailable assurance fields and missing statistical evidence distinct from negative factual claims",
+      "reference": "The complete supplied corpus establishes neither an independent security certification identifier nor a contractual queue-record storage region. Do not invent a certificate, infer no certification or no region options, or turn the fictional Test Room East benchmark label into a residency commitment. Nor does the report provide raw event traces or a production confidence/predictive interval from which one can manufacture error bars or a significance claim. State the specific evidence limit and the documentation or measurement needed to resolve it, with no external lookup.",
+      "source_ids": ["S1", "S3", "S4", "S5", "S6"],
+      "evidence_groups": [["S1"], ["S3"], ["S4"], ["S5"], ["S6"]]
+    }
+  ]
+}

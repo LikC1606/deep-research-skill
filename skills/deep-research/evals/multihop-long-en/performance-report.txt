@@ -1,0 +1,100 @@
+PERF-246: Trivenn Queue 2.4.1 persistent-worker evaluation
+Synthetic Systems Lab performance group. Main text signed 2026-08-20; revision 1.1 attached 2026-08-24.
+This is a fictional engineering report for a public development evaluation case.
+
+1. Summary retained from the original signed report
+
+The initial analysis described lower CPU use and a p95 of 118 ms for the candidate. Table 1 is preserved to make downstream copies traceable. It lists B-11 at 30 CPU-ms per accepted clean job and 90 CPU-ms per accepted retry job; the candidate at 18 CPU-ms per accepted clean job and 40 CPU-ms per accepted retry job. The initial overview called this about a 47 percent CPU reduction for an 80/20 accepted-job mix. The original presentation did not include commercial terms. Revision 1.1 appends an accounting correction and a latency-label correction; main-text historical tables were not silently overwritten.
+
+Table 1. Original presentation, before revision 1.1
+Build | Clean CPU-ms/accepted job | Retry CPU-ms/accepted job | Column headed p95 queue residence, ms
+B-11 | 30 | 90 | 142
+tq241-c17e-9b42 | 18 | 40 | 118
+
+2. Question and execution boundaries
+
+The experiment compares the persistent worker of build tq241-c17e-9b42 with B-11 on the same synthetic admission and acknowledgment interface. Each run uses eight producer streams, an admission ceiling of 32 and a persistent write barrier. Both builds write their completion marker before acknowledgment. The candidate's barrier-disabled experimental sibling was not loaded into this run. Changing the ceiling, the write barrier or the retry distribution changes the meaning of the measurements. This report does not estimate all possible deployment configurations from one run series.
+
+CPU time is the sum of worker-process user and system CPU clocks, expressed in milliseconds. It is not wall-clock queue residence. A job can wait while using no worker CPU, and several worker threads can accumulate CPU while the observed job is waiting for a barrier. Therefore neither a CPU ratio nor a throughput ratio supplies a queue-residence percentile. The harness has separate event clocks for these quantities. A unit label on a spreadsheet cannot change which events were actually included.
+
+3. Jobs, attempts and denominators
+
+An accepted job is a logical item with one stable job identifier and a final acknowledgment. A clean job has one successful attempt. A retry job has one deliberately failed attempt, an intervening requeue and one successful attempt under the same identifier. The failed attempt writes a rollback marker and is chargeable worker activity even though it produces no accepted result. The denominator used throughout the workload definition is accepted logical jobs. An attempt counter is also available for troubleshooting, but it is not the denominator for the requested workload mixture.
+
+The driver marks the class before enqueueing, so a slow job cannot migrate from one class to the other based on its outcome. A retry-class item is not two accepted jobs. An initial timeout does not remove the item from the intended population. The harness rejects runs if a final acknowledgment is missing; it does not exclude missing acknowledgments and then describe the remainder as a complete population. Each accepted item in the retained dataset reached a terminal acknowledgment during the measurement window.
+
+4. Matching the mixture to a service request
+
+The reference traffic stream contains 80 percent clean accepted jobs and 20 percent retry accepted jobs, randomized within blocks of 100 logical identifiers. This preserves the proportions at the accepted-job level without treating an attempt burst as a different customer workload. Per-class CPU means can be weighted by these proportions to forecast the given workload, provided the boundary includes all chargeable work for each class. The report does not supply per-class means for three-retry jobs, jobs that are dropped after a failure, or different barrier durability settings.
+
+An observed distribution of attempts has a different denominator. Under the defined retry behavior, the retry class produces more attempts than the clean class. Substituting the fraction of failed attempts for the fraction of accepted retry jobs changes the CPU forecast. Likewise, using only the CPU of successful attempts leaves chargeable work outside the forecast. The associated raw event schema distinguishes class, attempt ordinal and terminal job outcome so an auditor can reconstruct either perspective explicitly.
+
+5. Scheduling and host controls
+
+The paired order alternated candidate and reference within each host slot. The harness reset the queue between runs, waited for the storage barrier to drain, and checked that no process from the previous run remained. All retained hosts used the same configured worker CPU allocation. Host counters were used to detect an unrelated process taking the worker's allocation; no retained pair triggered that exclusion rule. These controls reduce one source of drift but do not establish that the workload covers every production pattern.
+
+The load driver ran outside the billed worker process. Producer CPU, visualization CPU and the file-copy utility were not charged to either queue implementation in this comparison. Those components were identical for the two queue options and were not measured as part of worker CPU. A deployment with different producer or storage arrangements needs a separate boundary statement. The billable worker boundary used for this dossier is addressed in Appendix C, because a post-signature audit found that the initial extraction omitted one process role for the candidate.
+
+6. Timing events and clock handling
+
+The harness records enqueue-first, attempt-start, attempt-finish, requeue and final-ack events with a monotonic clock. A job's queue residence is final-ack minus enqueue-first. Worker service time measures active time from an attempt's start to its finish. Requeue wait is outside service time but inside logical-job queue residence. Both durations use milliseconds, which makes a mislabeled column difficult to notice when only the column heading is copied into a slide. Every latency series therefore retains its event-pair definition in the metadata.
+
+Wall-clock timestamps synchronize artifact logs for human review; they are not subtracted to calculate latency. A corrected local time zone or a log export date cannot change the monotonic duration. The report does not treat milliseconds of CPU as milliseconds on the queue clock. Percentiles are computed from individual logical-job observations after warm-up removal, not from the arithmetic mean of the run-level percentiles. The retained complete-run identifiers appear later so that a reviewer can distinguish the pooled series from a single illustrative run.
+
+7. Warm-up and retained observations
+
+Each run first processes 20,000 accepted warm-up jobs, then 100,000 measured accepted jobs. Warm-up jobs are omitted by identifier ranges fixed before either build executes. The retained dataset contains eight complete measured runs for each build; every measured run contains 80,000 clean and 20,000 retry accepted jobs. No gate should be assessed by mixing warm-up from one build with steady-state data from the other. The same warm-up rule and input identifier sequence were used in each paired slot.
+
+The eight runs are repeated observations from one generated workload and one host configuration. They are not eight independent real customer deployments. This report does not publish a production-population confidence interval, a predictive interval for September demand, or a claim of statistical significance. A descriptive point estimate may guide the specified acceptance test while leaving generalization uncertain. Repeated benchmark points alone cannot provide a guarantee that no future tail event will exceed a threshold.
+
+8. Retained-run ledger
+
+The measured run identifiers are B11-P01 through B11-P08 for the reference and T241-P01 through T241-P08 for the candidate. Each identifier carries 100,000 measured accepted logical jobs. The pooled population per build is therefore the sum of eight equal-sized complete runs, rather than an estimate inflated by counting a retry as two accepted results. All eight candidate runs use digest tq241-c17e-9b42. The manifest rejects the experimental digest tq241-x00a-1d13 even if its human-readable label shares a product prefix.
+
+This version of the dossier does not include a raw individual-event attachment. The run ledger, aggregate extraction definitions and corrected per-class means are public here; individual event traces are retained internally in the fictional experiment. A reader can reproduce a workload-weighted CPU calculation from the published means, but cannot independently recompute a p95 from absent raw observations. Do not invent run-level p95 values or error bars to fill that gap. The corrected pooled p95 is the reported descriptive statistic for the specified measured population.
+
+9. Storage and persistence behavior
+
+Each accepted job appends one final completion marker. A retry-class job also appends a failed-attempt marker before it is admitted to the second attempt. The candidate uses a helper process for marker serialization. B-11 performs the same logical work in the primary worker process. Both implementations were configured to acknowledge only after the persistent barrier. Splitting the role across processes affects a process-scoped CPU extraction even if the customer-facing job lifecycle is unchanged.
+
+Queue payloads were generated deterministically from the logical identifier and a local seed. The data generator uses no customer records. The performance host location in this experiment is the fictional Test Room East. That label is a benchmark environment label, not a product hosting region, a residency option or a contractual commitment about where any future service stores its queue records. The report measures implementation behavior and does not establish a vendor's legal or security assurances.
+
+10. Error handling and backpressure
+
+When admission is full, the producer waits for the next slot. That wait belongs to queue residence if it occurs after enqueue-first. The driver is designed to avoid open-loop overload beyond the defined ceiling; it consequently does not establish the candidate's response to an unlimited production arrival burst. A failed first attempt consumes worker CPU and may delay unrelated items before its retry completes. An implementation with lower mean CPU can still have a larger queue-residence p95 if its requeue ordering or barrier schedule concentrates delays.
+
+No retained logical job exhausted a retry limit because the generated retry class is defined to succeed on its second attempt. This observation cannot be generalized to jobs that keep failing, different payload classes or faults in a real storage layer. The workload contains no operator-initiated cancellation. Neither a zero cancellation count in this synthetic population nor a local test certificate should be described as an independent security certification. Those questions require evidence of the relevant assurance scope.
+
+11. Throughput and latency are different comparisons
+
+The driver kept a bounded queue occupied for the steady-state windows. Total accepted jobs per run was fixed, so measured completion rate can describe how quickly that synthetic batch drained. It does not directly predict the steady-state percentile under a different arrival model. A comparison expressed as jobs per wall-second should not be converted into a CPU charge without measuring worker CPU. CPU utilization below full allocation could otherwise make the conversion wrong even when the completion-rate ratio is correct.
+
+Similarly, the largest single latency in one short run is not a pooled p95. Percentiles are not additive and cannot be averaged by class using the same rule as a mean CPU cost. This dossier publishes a pooled p95 for the matching 80/20 mixture so the gate can use a compatible statistic. A reviewer seeking the p95 for a 50/50 mixture would need another measured distribution or the underlying event population, not a linear combination of two percentile labels.
+
+12. Release-specific applicability
+
+The product label in this report is Trivenn Queue 2.4.1 and the build digest is tq241-c17e-9b42. The 2.4.0 prototype used a different requeue order. Its archived plot cannot establish the current build's p95. The no-barrier sibling is also a separate object: it avoids some persistence work and may appear faster, but does not satisfy the persistence mode being reviewed here. Version and configuration are independent axes; matching only one does not make a benchmark applicable.
+
+The report was prepared before the eventual commercial schedule took effect. It contains no final price per CPU hour, no license rate and no quote for the existing queue. An absolute dollar forecast must join these measurements to a dated applicable price schedule and an explicit workload. Adding a cost number to an uncited performance sentence does not make this report the source of that price. Nor does a queue module's marketing label determine whether its commercial fee is fixed or proportional to attempts.
+
+13. Reproduction notes for a bounded audit
+
+A reviewer should first match the artifact digest, persistence setting, producer count and admission ceiling. Next verify that all class denominators are accepted logical jobs and that the worker CPU boundary includes every chargeable worker role. Only then apply workload proportions to CPU means. For latency, use the declared event pair and pooled population; avoid turning the reported mean into a tail statistic. Keep the revisions attached to the dossier so a copied summary does not outlive the numbers it summarized.
+
+Because this is an aggregate public dossier, an audit can check arithmetic and scope but cannot validate unpublished event traces. The public table should be described as reported measurements. A proposed production experiment should log complete logical-job boundaries, billed CPU for all worker roles and any new arrival pattern. Such a proposal is a next step, not evidence that a current gate already passes. Changes to limits or billing boundaries should be named rather than hidden inside a revised denominator.
+
+Appendix A. Field dictionary
+
+accepted_class is clean or retry, assigned before enqueue. accepted_count counts unique logical identifiers ending in final-ack. attempt_count counts started attempts and can exceed accepted_count. primary_cpu_ms is summed user plus system CPU in the primary worker. helper_cpu_ms is the corresponding CPU in the persistence helper, when one exists. service_ms is the active attempt event-pair duration. residence_ms is final-ack minus enqueue-first for the whole logical job. The billing exporter includes both worker roles; the original analysis notebook used only primary_cpu_ms for the candidate.
+
+Appendix B. Publication and derivative material
+
+The originally signed summary was distributed as a short text excerpt on 2026-08-20. Some discussion digests are reproductions of that excerpt. A later publication date on a digest does not imply that its author read a revised dossier, reran the experiment or independently replicated a result. A comparison should track the excerpt's stated revision and origin. This dossier retains its original Table 1 precisely so such copies can be identified without changing the historical record.
+
+Appendix C. Accounting and label correction, signed 2026-08-24
+
+C.1 CPU boundary. Revision 1.1 supersedes the candidate CPU means in Table 1 for cost and efficiency comparisons. The first extraction omitted persistence-helper CPU. The helper is billable worker activity under schedule L-44. In the retained runs, candidate clean jobs add 6 CPU-ms of helper work to the 18 CPU-ms primary-worker mean, giving 24 CPU-ms per accepted clean job. Candidate retry jobs add 20 CPU-ms of helper work to the 40 CPU-ms primary-worker mean, giving 60 CPU-ms per accepted retry job. Each corrected class mean covers all its attempts. B-11 already performs this work in its primary worker; its means remain 30 and 90 CPU-ms per accepted clean and retry job respectively. Do not add helper CPU to B-11 a second time.
+
+C.2 Latency scope. The 118 ms candidate value in Table 1 was the pooled p95 of worker service time, incorrectly headed queue residence. It excluded requeue wait. The matching retained logical-job series reports pooled steady-state queue-residence p95 of 168 ms for tq241-c17e-9b42. This series includes first enqueue through final acknowledgment and uses the eight complete measured 80/20 runs under the eight-producer, ceiling-32, persistent-barrier configuration. B-11's 142 ms value was already queue residence and is unchanged. The 118 ms statistic remains a valid service-time statistic but is not a queue-residence observation.
+
+C.3 Interpretation limits. The corrected CPU means and queue-residence value replace the original values only for this described workload, artifact and boundary. They do not establish a p95 at a different traffic mixture or prove a future production guarantee. No significance test or assurance certification is added by this correction. The build digest is unchanged. Historical summaries that show 18/40 CPU-ms and 118 ms without these boundaries describe the pre-correction extraction.

@@ -11,6 +11,7 @@ import argparse
 import fcntl
 from functools import lru_cache
 import html
+import importlib.util
 import ipaddress
 import json
 import os
@@ -32,6 +33,10 @@ UA = "deep-research-benchmark/0.1 (read-only; research evaluation)"
 MAX_BYTES = 400_000
 TIMEOUT = 15
 
+_metrics_spec = importlib.util.spec_from_file_location("deep_research_metrics", Path(__file__).with_name("run_metrics.py"))
+metrics = importlib.util.module_from_spec(_metrics_spec)
+_metrics_spec.loader.exec_module(metrics)
+
 
 def _policy_parts() -> tuple[str, ...]:
     return tuple(
@@ -47,34 +52,7 @@ def _blocked_by_policy(url: str) -> bool:
 
 
 def _reserve(kind: str) -> None:
-    """Enforce optional fetch/search limits within the current run."""
-    run_dir = os.environ.get("DRBENCH_RUN_DIR") or os.environ.get("DEEP_RESEARCH_RUN_DIR")
-    if not run_dir:
-        return
-    limit_name = "DRBENCH_MAX_SEARCH" if kind == "search" else "DRBENCH_MAX_READ"
-    limit = int(os.environ.get(limit_name) or os.environ.get(
-        f"DEEP_RESEARCH_MAX_{kind.upper()}", "0"
-    ))
-    if limit <= 0:
-        return
-    state_path = Path(run_dir) / ".adapter-counts.json"
-    lock_path = Path(run_dir) / ".adapter-counts.lock"
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a+", encoding="utf-8") as lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-        try:
-            try:
-                state = json.loads(state_path.read_text(encoding="utf-8"))
-            except (FileNotFoundError, json.JSONDecodeError):
-                state = {"search": 0, "read": 0, "blocked": 0}
-            if state.get(kind, 0) >= limit:
-                state["blocked"] = state.get("blocked", 0) + 1
-                state_path.write_text(json.dumps(state), encoding="utf-8")
-                raise RuntimeError(f"{kind} budget exhausted ({limit})")
-            state[kind] = state.get(kind, 0) + 1
-            state_path.write_text(json.dumps(state), encoding="utf-8")
-        finally:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+    metrics.reserve(kind)
 
 
 @lru_cache(maxsize=512)
@@ -117,18 +95,16 @@ def _url_ok(url: str) -> bool:
 def _get(url: str) -> tuple[str, str]:
     if not _url_ok(url):
         raise ValueError(f"blocked or unsupported URL: {url}")
-    response = requests.get(
+    with metrics.request(requests.get,
         url,
+        url_ok=_url_ok,
         headers={"User-Agent": UA, "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.1"},
         timeout=TIMEOUT,
-        allow_redirects=True,
-    )
-    if not _url_ok(response.url):
-        raise ValueError(f"redirected to blocked URL: {response.url}")
-    response.raise_for_status()
-    raw = response.content[:MAX_BYTES]
-    encoding = response.encoding or "utf-8"
-    return raw.decode(encoding, errors="replace"), response.url
+    ) as response:
+        response.raise_for_status()
+        raw = response.content[:MAX_BYTES]
+        encoding = response.encoding or "utf-8"
+        return raw.decode(encoding, errors="replace"), response.url
 
 
 def _clean(value: str, limit: int = 700) -> str:
@@ -137,10 +113,11 @@ def _clean(value: str, limit: int = 700) -> str:
 
 
 def _record_event(kind: str, payload: dict) -> None:
-    run_dir = os.environ.get("DRBENCH_RUN_DIR")
+    run_dir = os.environ.get("DRBENCH_RUN_DIR") or os.environ.get("DEEP_RESEARCH_RUN_DIR")
     if not run_dir:
         return
     path = Path(run_dir) / ".adapter-events.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = Path(run_dir) / ".adapter-events.lock"
     with lock_path.open("a+", encoding="utf-8") as lock:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
@@ -151,12 +128,16 @@ def _record_event(kind: str, payload: dict) -> None:
             fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
-def _bing(query: str, limit: int) -> list[dict[str, str]]:
+def _bing(query: str, limit: int, *, strict: bool = False) -> list[dict[str, str]]:
     url = "https://www.bing.com/search?format=rss&" + urllib.parse.urlencode({"q": query})
     try:
         body, _ = _get(url)
         root = ET.fromstring(body)
+        if strict and (root.tag != "rss" or root.find("channel") is None):
+            raise ValueError("unexpected Bing RSS search response")
     except Exception:
+        if strict:
+            raise
         return []
     cards: list[dict[str, str]] = []
     for item in root.findall(".//item")[:limit]:
@@ -168,13 +149,18 @@ def _bing(query: str, limit: int) -> list[dict[str, str]]:
     return cards
 
 
-def _so360(query: str, limit: int) -> list[dict[str, str]]:
+def _so360(query: str, limit: int, *, strict: bool = False) -> list[dict[str, str]]:
     url = "https://www.so.com/s?" + urllib.parse.urlencode({"q": query})
     try:
         body, _ = _get(url)
     except Exception:
+        if strict:
+            raise
         return []
     soup = BeautifulSoup(body, "html.parser")
+    if (strict and soup.select_one("li.res-list h3.res-title a") is None
+            and not re.search(r"(?:没有|未)(?:找到|搜到).{0,30}(?:结果|内容)|无相关结果", soup.get_text(" "))):
+        raise ValueError("unrecognized 360 search response; cannot confirm empty results")
     cards: list[dict[str, str]] = []
     seen: set[str] = set()
     for item in soup.select("li.res-list"):

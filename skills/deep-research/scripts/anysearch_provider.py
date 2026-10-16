@@ -8,12 +8,18 @@ research state remain owned by research.py.
 from __future__ import annotations
 
 import json
+import importlib.util
 import os
+from pathlib import Path
 import re
 from collections.abc import Callable
 from typing import Any
 
 import requests
+
+_metrics_spec = importlib.util.spec_from_file_location("deep_research_metrics", Path(__file__).with_name("run_metrics.py"))
+metrics = importlib.util.module_from_spec(_metrics_spec)
+_metrics_spec.loader.exec_module(metrics)
 
 
 ENDPOINT = "https://api.anysearch.com/mcp"
@@ -85,28 +91,24 @@ def _rpc(arguments: dict, post: Callable | None = None) -> str:
         "params": {"name": "search", "arguments": arguments},
     }
     sender = post or requests.post
-    response = None
     try:
-        response = sender(
+        with metrics.request(sender,
             ENDPOINT,
             json=payload,
             headers=headers,
             timeout=_timeout(),
             allow_redirects=False,
             stream=True,
-        )
-        status = int(getattr(response, "status_code", 0) or 0)
-        if 300 <= status < 400:
-            raise AnySearchError("AnySearch endpoint returned a redirect")
-        response.raise_for_status()
-        value = _read_limited_json(response)
+        ) as response:
+            status = int(getattr(response, "status_code", 0) or 0)
+            if 300 <= status < 400:
+                raise AnySearchError("AnySearch endpoint returned a redirect")
+            response.raise_for_status()
+            value = _read_limited_json(response)
     except AnySearchError:
         raise
     except requests.RequestException as exc:
         raise AnySearchError(f"AnySearch request failed: {type(exc).__name__}") from exc
-    finally:
-        if response is not None:
-            response.close()
 
     error = value.get("error")
     if isinstance(error, dict):

@@ -161,6 +161,84 @@ class EvaluationTests(unittest.TestCase):
             self.prepare()
         self.assertEqual((directory / "blind.json").read_bytes(), original)
 
+    def test_http_counts_do_not_hide_fixed_corpus_search_and_read_costs(self):
+        case = json.loads(self.case.read_text())
+        case["budget"].update(search_calls=2)
+        self.case.write_text(json.dumps(case))
+        public = self.folder / "researcher"
+        evaluation.pack_case(ws, str(self.case), str(public))
+        research._ref_search("participants", 5, None, None, None, "direct", corpus_path=str(public / "case.json"))
+        research.fixed_corpus.read(ws, str(public / "case.json"), "S1", lambda value: research._ref_read(value, [], 100))
+        research.base.metrics.snapshot()
+        directory = self.prepare(a_run=str(self.folder))
+        key = json.loads((directory / "key.json").read_text())
+        measurement = next(row["measurements"] for row in key["labels"].values() if row["input"] == "a")
+        self.assertEqual(measurement["provenance"], "fixed_corpus_tool_trace")
+        self.assertEqual((measurement["values"]["search_calls"], measurement["values"]["source_reads"]), (1, 1))
+        self.assertEqual(measurement["adapter_usage"]["values"]["requests"], 0)
+        self.assertIsNone(measurement["values"]["cost_usd"])
+
+    def test_platform_measurements_preserve_the_separate_adapter_counts(self):
+        (self.folder / "measurements.json").write_text('{"model":"recorded-model", "cost_usd":null}')
+        (self.folder / ".adapter-counts.json").write_text('{"requests":3, "request_seconds":1.5}')
+        directory = self.prepare(a_run=str(self.folder))
+        key = json.loads((directory / "key.json").read_text())
+        measurement = next(row["measurements"] for row in key["labels"].values() if row["input"] == "a")
+        self.assertEqual(measurement["values"], {"model": "recorded-model", "cost_usd": None})
+        self.assertEqual(measurement["adapter_usage"]["values"]["requests"], 3)
+
+    def test_comparison_keeps_v2_spans_and_derivations_private_and_rechecks_snapshots(self):
+        ws.init_task("Review participant arithmetic", "trial")
+        ws.set_need("N1", question="How many participants?", proof="The original trial record")
+        ref = "REF-0000000000000001"
+        source = (self.folder / "source.txt").read_text(encoding="utf-8")
+        ws.save_source(ref, {"url": str(self.folder / "source.txt"), "content_scope": "local_file"}, source)
+        card = ws.record_evidence(ref, "N1", "12 participants", source, "supports")
+        self.a.write_text(f"12 participants; twice that is 24. [{card['id']}]", encoding="utf-8")
+        prepared = research.claim_review.claims(ws, research.reporting, str(self.a), schema_version=2)
+        judgments = json.loads(Path(prepared["template_path"]).read_text(encoding="utf-8"))
+        judgments["reviewer"] = "private-span-reviewer"
+        first = judgments["claims"][0]
+        sentence = first["claim"]
+        position = sentence.index(";")
+        second = copy.deepcopy(first)
+        for row in (first, second):
+            row.update(kind="factual", verdict="supported", support_mode="direct", support_origin="source_stated",
+                       rationale="Reviewed the full segment against its saved source.")
+            row["bindings"][0].update(contribution="necessary", rationale="Supplies the participant count.")
+        first.update(claim=sentence[:position], span=[0, position])
+        second.update(id="C1-derived", kind="inference", claim=sentence[position:], span=[position, len(sentence)],
+                      support_origin="derived", derivation={"premise_evidence_ids": [card["id"]],
+                          "formula": "12 * 2 = 24", "units": "participants", "assumptions": []})
+        judgments["claims"] = [first, second]
+        path = self.folder / "semantic.json"
+        path.write_text(json.dumps(judgments), encoding="utf-8")
+        saved = research.claim_review.claims(ws, research.reporting, str(self.a), judgments_path=str(path))
+        saved_bytes = Path(saved["review_path"]).read_bytes()
+
+        def compared(name):
+            directory = self.prepare(name, a_run=str(self.folder), semantic_review=research.claim_review)
+            key = json.loads((directory / "key.json").read_text(encoding="utf-8"))
+            private = next(row["claim_review"] for row in key["labels"].values() if row["input"] == "a")
+            blind = (directory / "blind.json").read_text(encoding="utf-8")
+            self.assertNotIn("private-span-reviewer", blind)
+            self.assertNotIn("support_origin", blind)
+            return private
+
+        private = compared("semantic-comparison")
+        self.assertEqual(private["schema_version"], 2)
+        self.assertEqual(private["metrics"]["candidate_metrics"]["derived_supported_candidates"], 1)
+        self.assertEqual(private["metrics"]["candidate_metrics"]["source_stated_supported_candidates"], 0)
+        for expected, actual in zip(judgments["claims"], private["claims"]):
+            for key in ("candidate_id", "span", "support_origin", "derivation"):
+                self.assertEqual(actual[key], expected[key])
+        snapshot = ws.root() / "sources" / ref / f"{card['content_hash']}.txt"
+        snapshot.write_text("Corrupt historical source.", encoding="utf-8")
+        private = compared("semantic-corrupt-comparison")
+        self.assertEqual(private["metrics"]["candidate_metrics"]["fully_supported_candidates"], 0)
+        self.assertTrue(all(row["verdict"] == "read_error" for row in private["claims"]))
+        self.assertEqual(Path(saved["review_path"]).read_bytes(), saved_bytes)
+
     def test_compare_and_score_cli_flow(self):
         def cli(*args):
             result = subprocess.run([sys.executable, str(SCRIPT), *args], capture_output=True, text=True, timeout=30)
@@ -232,12 +310,12 @@ class EvaluationTests(unittest.TestCase):
             self.prepare()
 
     def test_authored_bilingual_cases_export_without_reference_answers(self):
-        for name in ("pricing-hard-zh", "trial-hard-en"):
+        for name in ("pricing-hard-zh", "trial-hard-en", "multihop-long-en"):
             case = SCRIPT.parent.parent / "evals" / name / "case.json"
             output = self.folder / name
             evaluation.pack_case(ws, str(case), str(output))
             public = json.loads((output / "case.json").read_text())
-            self.assertEqual(len(public["sources"]), 5)
+            self.assertEqual(len(public["sources"]), 6 if name == "multihop-long-en" else 5)
             self.assertNotIn("evaluator", public)
             self.assertNotIn("checklist", public)
 

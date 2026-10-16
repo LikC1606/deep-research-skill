@@ -1,0 +1,173 @@
+{
+  "schema_version": 1,
+  "criteria": [
+    {
+      "id": "M1",
+      "requirement": "Resolve the CT-91 alias to its accepted archive pointer.",
+      "reference": "CT-91 requests Needle-17. S2 maps that alias to ARC-6E, not Needle-17-fast/ARC-6F or a similarly named object. 'Accepted pilot handoff' means sealed artifacts for review, not passage of CT-91's workload gates.",
+      "source_ids": ["S1", "S2"],
+      "critical": true
+    },
+    {
+      "id": "M2",
+      "requirement": "Follow the archive pointer to the exact deployable package and build.",
+      "reference": "ARC-6E identifies Trivenn Queue 2.4.1, package tq-2.4.1-linux-x64, sealed digest tq241-c17e-9b42. The 2.4.0 prototype and experimental digest tq241-x00a-1d13 are different objects. The conclusion must follow the S1-to-S2-to-S3 chain rather than infer identity from a product name in a performance excerpt.",
+      "source_ids": ["S1", "S2", "S3"],
+      "critical": true
+    },
+    {
+      "id": "M3",
+      "requirement": "Match the requested performance configuration and reference build.",
+      "reference": "Use B-11 as the existing queue and tq241-c17e-9b42 with persistent write barrier on, eight producer streams and admission ceiling 32. Barrier-disabled sibling results and unmatched configurations cannot establish CT-91 acceptance.",
+      "source_ids": ["S1", "S3", "S4"],
+      "critical": true
+    },
+    {
+      "id": "M4",
+      "requirement": "Use the corrected billable worker-CPU boundary and per-class means.",
+      "reference": "S4 Appendix C, signed 2026-08-24, supersedes candidate primary-only means 18/40 with all-worker means 24/60 CPU-ms per accepted clean/retry job. B-11 remains 30/90. Each corrected mean already includes all attempts and billable persistence work; neither omit failed-attempt/helper CPU nor add that work a second time.",
+      "source_ids": ["S4", "S6"],
+      "critical": true
+    },
+    {
+      "id": "M5",
+      "requirement": "Calculate the monthly accepted-job volume using the workload's logical-job denominator.",
+      "reference": "2,000,000 accepted jobs/day * 30 days = 60,000,000 accepted jobs in September. A retry-class job has two attempts but remains one accepted logical job. The 80/20 mix is a fraction of accepted jobs, not attempts.",
+      "source_ids": ["S1", "S4"],
+      "critical": true
+    },
+    {
+      "id": "M6",
+      "requirement": "Calculate the workload-weighted B-11 CPU mean.",
+      "reference": "0.8 * 30 + 0.2 * 90 = 42 CPU-ms per accepted job for B-11. This is a derived mean using the accepted-job mix and matching per-class CPU means, not a latency percentile.",
+      "source_ids": ["S1", "S4"],
+      "critical": true
+    },
+    {
+      "id": "M7",
+      "requirement": "Calculate the workload-weighted candidate CPU mean.",
+      "reference": "0.8 * 24 + 0.2 * 60 = 31.2 CPU-ms per accepted job for the candidate, using the corrected all-worker values. Weighting 18/40, attempt proportions or class p95 values does not yield the requested CPU mean.",
+      "source_ids": ["S1", "S4"],
+      "critical": true
+    },
+    {
+      "id": "M8",
+      "requirement": "Convert B-11's workload-weighted CPU to monthly CPU hours.",
+      "reference": "42 CPU-ms/accepted job * 60,000,000 accepted jobs / 1,000 ms/s / 3,600 s/h = 700 CPU-h. Show or clearly describe this derivation and cite its workload, measurement and unit-conversion premises.",
+      "source_ids": ["S1", "S4", "S6"],
+      "critical": true
+    },
+    {
+      "id": "M9",
+      "requirement": "Convert the candidate's workload-weighted CPU to monthly CPU hours.",
+      "reference": "31.2 CPU-ms/accepted job * 60,000,000 accepted jobs / 1,000 ms/s / 3,600 s/h = 520 CPU-h. This is a forecast from measured CPU under the stated workload, not elapsed queue time.",
+      "source_ids": ["S1", "S4", "S6"],
+      "critical": true
+    },
+    {
+      "id": "M10",
+      "requirement": "Use the applicable September CPU price and billing convention.",
+      "reference": "Schedule L-44 applies from 2026-09-01 through 2026-09-30 and charges both queues USD 0.40 per CPU-h on continuously aggregated measured CPU, with final monthly dollars rounded to cents. L-43's USD 0.35 price is expired; per-job, per-attempt or whole-hour rounding is not the quoted model.",
+      "source_ids": ["S6"],
+      "critical": true
+    },
+    {
+      "id": "M11",
+      "requirement": "Include the applicable fixed queue-license fees in the scoped comparison.",
+      "reference": "Under L-44, B-11's September fixed queue-module fee is USD 0 and the candidate's fee is USD 60 for the full month. The fee is fixed, not per attempt/job/CPU-hour; the earlier uncommitted waiver does not apply. CT-91 excludes unchanged shared infrastructure and assumes no idle capacity, tax, discount or credit, with no other queue-specific fee.",
+      "source_ids": ["S1", "S6"],
+      "critical": true
+    },
+    {
+      "id": "M12",
+      "requirement": "Calculate B-11's complete scoped monthly cost.",
+      "reference": "700 CPU-h * USD 0.40/CPU-h + USD 0 fixed license = USD 280.00/month. The total joins the workload, reported CPU measurements and current commercial terms.",
+      "source_ids": ["S1", "S4", "S6"],
+      "critical": true
+    },
+    {
+      "id": "M13",
+      "requirement": "Calculate the candidate's complete scoped monthly cost.",
+      "reference": "520 CPU-h * USD 0.40/CPU-h + USD 60 fixed license = USD 268.00/month. USD 208.00 is CPU-only spending and cannot be presented as the CPU-plus-license total.",
+      "source_ids": ["S1", "S4", "S6"],
+      "critical": true
+    },
+    {
+      "id": "M14",
+      "requirement": "Calculate the CPU-only reduction without relabeling it as total-cost or latency savings.",
+      "reference": "700 - 520 = 180 CPU-h less per month; (700 - 520)/700 * 100 = 25.7142857%, about 25.71% lower CPU use. This derived CPU reduction is distinct from CPU-plus-license savings and supplies no queue-residence reduction.",
+      "source_ids": ["S1", "S4", "S6"],
+      "critical": true
+    },
+    {
+      "id": "M15",
+      "requirement": "Calculate the absolute and relative difference in total scoped monthly spending against B-11.",
+      "reference": "USD 280.00 - USD 268.00 = USD 12.00/month saved. (280 - 268)/280 * 100 = 4.2857143%, about 4.29% lower CPU-plus-license spending, using B-11 as the denominator. This is not the 25.71% CPU-only reduction.",
+      "source_ids": ["S1", "S4", "S6"],
+      "critical": true
+    },
+    {
+      "id": "M16",
+      "requirement": "Apply CT-91's total-cost acceptance gate.",
+      "reference": "CT-91 requires at least 20% lower monthly CPU-plus-license spending than B-11. The candidate's 4.29% saving is below 20%, so the cost gate fails. Equivalently, 0.8 * USD 280.00 = USD 224.00 is the passing ceiling, below the USD 268.00 forecast; an explicit ceiling is optional if the threshold comparison is otherwise clear.",
+      "source_ids": ["S1", "S4", "S6"],
+      "critical": true
+    },
+    {
+      "id": "M17",
+      "requirement": "Preserve the corrected latency statistic's event boundary and population.",
+      "reference": "S4 Appendix C identifies 118 ms as the candidate's pooled worker-service p95, excluding requeue wait. The corrected matching pooled steady-state queue-residence p95 is 168 ms, first enqueue through final acknowledgment, including failed attempt and requeue. B-11's 142 ms queue-residence p95 is unchanged. A service-time value or CPU ratio cannot replace the queue-residence statistic.",
+      "source_ids": ["S1", "S3", "S4"],
+      "critical": true
+    },
+    {
+      "id": "M18",
+      "requirement": "Apply CT-91's queue-residence p95 acceptance gate.",
+      "reference": "The required matching queue-residence p95 is no greater than 150 ms. The corrected candidate value of 168 ms is greater than 150 ms, so the latency gate fails. The 118 ms service-time statistic cannot establish a pass.",
+      "source_ids": ["S1", "S3", "S4"],
+      "critical": true
+    },
+    {
+      "id": "M19",
+      "requirement": "Represent the later-dated digest's actual measurement provenance.",
+      "reference": "S5, posted 2026-08-28, reproduces the PERF-246 executive-summary excerpt circulated 2026-08-20. It did not inspect appendices, rerun measurements or obtain commercial terms. Its later publication date does not override S4's 2026-08-24 correction or provide independent corroboration of the old 18/40 CPU and 118 ms summary.",
+      "source_ids": ["S4", "S5"],
+      "critical": false
+    },
+    {
+      "id": "M20",
+      "requirement": "Preserve the evidence gap about an independent security-certification identifier.",
+      "reference": "The complete supplied corpus does not establish an independent security-certification identifier. Do not invent one or infer that no certification exists from absent documentation, a local test certificate or synthetic benchmark behavior. Resolving the question requires an applicable independent assurance document.",
+      "source_ids": ["S1", "S2", "S3", "S4", "S5", "S6"],
+      "critical": true
+    },
+    {
+      "id": "M21",
+      "requirement": "Preserve the evidence gap about the contractual queue-record storage region.",
+      "reference": "The complete supplied corpus does not establish a contractual storage-region commitment for queue records. Test Room East is a fictional benchmark environment, not a contractual hosting region; a local persistence setting also supplies no commitment. Unknown does not mean there are no residency options. An applicable contract or residency document is needed.",
+      "source_ids": ["S1", "S2", "S3", "S4", "S5", "S6"],
+      "critical": true
+    },
+    {
+      "id": "M22",
+      "requirement": "Give an approval recommendation consistent with the two necessary gates.",
+      "reference": "Both the total-cost and latency gates fail under the supplied model, so CT-91 cannot receive unconditional approval on current evidence. A scoped rerun, workload change or revised commercial terms may be proposed as future work, but no later passing result or production guarantee is established.",
+      "source_ids": ["S1", "S3", "S4", "S6"],
+      "critical": true
+    },
+    {
+      "id": "M23",
+      "requirement": "State the public-data limit on independently recomputing latency or uncertainty.",
+      "reference": "S4 publishes aggregate definitions, per-class CPU means and a retained-run ledger but not individual raw event traces or run-level p95 values. Arithmetic forecasts can be reproduced from the means, whereas the pooled p95 cannot be independently recomputed from the supplied raw observations because those observations are absent. Do not manufacture raw values, p95 samples or error bars.",
+      "source_ids": ["S4"],
+      "critical": false
+    },
+    {
+      "id": "M24",
+      "requirement": "Keep the benchmark's descriptive evidence distinct from production inference or statistical proof.",
+      "reference": "The matching p95 is pooled over eight complete measured 80/20 runs in one synthetic workload and host configuration after warm-up removal, not eight independent customer deployments. The report provides no production confidence/predictive interval or significance claim, and does not establish performance at another workload or guarantee future production p95.",
+      "source_ids": ["S1", "S4"],
+      "critical": true
+    }
+  ]
+}

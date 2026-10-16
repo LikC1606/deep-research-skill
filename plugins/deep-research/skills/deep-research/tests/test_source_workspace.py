@@ -160,6 +160,41 @@ class SourceWorkspaceTests(unittest.TestCase):
                 self.assertIn(f"Implementation ({expected})", text)
                 self.assertIn("GitHub (https://github.com/author/project)", text)
 
+    def test_kaggle_topic_keeps_post_links_and_the_first_reply(self):
+        url = "https://www.kaggle.com/competitions/widget/discussion/17"
+        repository = "https://github.com/author/method"
+        topic = {"topic": {"title": "1st place solution", "authorName": "Author",
+                           "url": "/competitions/widget/discussion/17",
+                           "content": f'<p>Our implementation: <a href="{repository}">code</a>.</p>'}}
+        messages = {"messages": [{"rawMarkdown": "Correction: the public checkpoint uses version 2."}]}
+        with mock.patch.object(research, "_kaggle_json", side_effect=[topic, messages]) as api, \
+                mock.patch.object(research.v1, "_fetch_bytes") as fetch:
+            result = research._ref_read(url, ["github.com"], 100)
+        self.assertEqual(api.call_count, 2)
+        fetch.assert_not_called()
+        self.assertEqual(result["allowed_citation_urls"], [url])
+        self.assertEqual(result["content_scope"], "discussion")
+        body = workspace.require_source(result["ref"])[1]
+        self.assertIn(repository, body)
+        self.assertIn("Correction: the public checkpoint uses version 2.", body)
+        found = workspace.excerpts(*workspace.require_source(result["ref"]),
+                                   ["github.com"], intro_if_missing=False)
+        self.assertIn(repository, found["windows"][0])
+
+    def test_kaggle_topic_resolves_relative_links_and_keeps_message_markdown(self):
+        url = "https://www.kaggle.com/competitions/widget/discussion/17"
+        topic = {"topic": {"url": "/competitions/widget/discussion/17",
+                           "content": '<p>Paper: <a href="/code/author/widget">notebook</a></p>'}}
+        markdown = "[Released weights](https://github.com/author/method/releases/tag/v2)"
+        with mock.patch.object(research, "_kaggle_json", side_effect=[
+            topic, {"messages": [{"rawMarkdown": markdown}]},
+        ]):
+            result = research._ref_read(url, [], 100)
+        body = workspace.require_source(result["ref"])[1]
+        self.assertIn("https://www.kaggle.com/code/author/widget", body)
+        self.assertIn(markdown, body)
+        self.assertEqual(result["allowed_citation_urls"], [url])
+
     def test_html_non_web_and_invalid_links_keep_only_their_labels(self):
         url = "https://example.org/study"
         html = (
@@ -220,7 +255,7 @@ class SourceWorkspaceTests(unittest.TestCase):
         self.assertEqual(result["content_type"], "openalex_abstract")
 
     def test_oversized_download_is_rejected_and_closed(self):
-        response = mock.Mock(url="https://example.org/large")
+        response = mock.Mock(url="https://example.org/large", status_code=200)
         response.iter_content.return_value = iter([b"123456", b"789"])
         response.headers = {"Content-Type": "text/plain"}
         with mock.patch.object(research.v1.base, "_url_ok", return_value=True), \

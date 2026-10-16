@@ -1,0 +1,13 @@
+CT-91: September queue change request
+Owner: Synthetic Systems Lab capacity planning. Issued 2026-08-25.
+All organizations, software names, artifacts and measurements in this case are fictional.
+
+The proposed queue is still called Needle-17 in the operations change calendar. This is a pilot alias, not a package name. The release archive should identify its accepted artifact; do not deploy a package by matching a nickname alone. The existing queue for this comparison is the single-worker reference build B-11.
+
+The September model is 30 days, with exactly 2,000,000 accepted jobs per day. Of accepted jobs, 80 percent belong to the clean class and 20 percent to the retry class. These are proportions of accepted jobs, not proportions of attempts. Every retry-class job in this model takes exactly one failed attempt followed by one successful attempt. No accepted job disappears from the workload when its first attempt fails. Use the report's matching steady-state configuration, with eight simultaneous client producers, an admission ceiling of 32 jobs and the persistent write barrier enabled. Experimental no-barrier results are outside this request.
+
+Use measured CPU time per accepted job to forecast CPU consumption. Capacity is assumed perfectly right-sized for this comparison: no idle capacity, minimum reserved instance, extra warm replica, tax, discount or credit. Both options use the same price schedule and shared infrastructure. The requested monthly comparison includes measured worker CPU charges and the queue module's fixed monthly license, and excludes shared costs that the queue choice does not change. There is no other queue-specific fee in this model. Procurement has supplied the applicable September billing schedule separately.
+
+The rollout has two necessary acceptance gates. Forecast monthly CPU-plus-queue-license spending must be at least 20 percent lower than B-11. Pooled steady-state p95 queue residence must be no greater than 150 ms at the matching workload and configuration. Queue residence starts at the first enqueue, includes a failed attempt and requeue, and ends at final acknowledgment. Worker service time alone cannot establish this gate. Failure of either gate prevents unconditional approval under CT-91; an engineering recommendation may propose a narrower follow-up experiment.
+
+Procurement also asks for the identifier of any independent security certification and the contractual storage region for queue records. The decision memo should name evidence gaps, if any. A benchmark region or a local data-path setting does not itself establish a contractual storage commitment. The supplied documents are the complete available evidence for this exercise; do not seek vendor information outside the corpus.

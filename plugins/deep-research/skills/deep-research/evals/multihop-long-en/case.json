@@ -1,0 +1,21 @@
+{
+  "id": "multihop-long-en",
+  "question": "Using only the supplied documents, advise whether the September rollout requested in CT-91 for 'Needle-17' meets its acceptance gates. Resolve the old alias to the exact deployable object, reconcile the performance claims, and calculate the monthly CPU and queue-license cost for the requested workload against the existing queue. State formulas, units, assumptions and source support for each premise. Explain which assurance questions can and cannot be answered from this corpus, and give a bounded recommendation rather than a production guarantee.",
+  "budget": {"network_calls": 0, "search_calls": 6, "source_reads": 6},
+  "checklist": [
+    {"id": "N1", "requirement": "Follow the alias and artifact chain to identify the exact candidate, not a similarly named pilot or sibling build"},
+    {"id": "N2", "requirement": "Reconcile the retained summary, the long report's later correction, and the later-dated digest using their actual scope and provenance"},
+    {"id": "N3", "requirement": "Calculate workload-weighted CPU, monthly CPU hours, the two monthly CPU-plus-license costs and their relative difference with explicit units"},
+    {"id": "N4", "requirement": "Apply the CT-91 cost and p95 gates using compatible traffic, versions and measurement boundaries; distinguish observations and forecasts from guarantees"},
+    {"id": "N5", "requirement": "Report the evidence limits for independent security certification and contractual data-residency commitments without inventing missing values"}
+  ],
+  "sources": [
+    {"id": "S1", "path": "change-ticket.txt"},
+    {"id": "S2", "path": "archive-index.txt"},
+    {"id": "S3", "path": "artifact-register.txt"},
+    {"id": "S4", "path": "performance-report.txt"},
+    {"id": "S5", "path": "community-digest.txt"},
+    {"id": "S6", "path": "billing-schedule.txt"}
+  ],
+  "evaluator": "evaluator.json"
+}

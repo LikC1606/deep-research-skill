@@ -1,0 +1,14 @@
+Release archive: calendar aliases and sealed artifact pointers
+Custodian: Synthetic Systems Lab release engineering. Exported 2026-08-26.
+
+The calendar alias is useful for tracing discussions but is never a release identifier. Accepted artifacts are described in the separate artifact register. This index deliberately preserves obsolete aliases so that incident responders can trace old change requests without relabeling historical messages.
+
+Alias | Archive state | Artifact-register key | Notes
+Needle-16 | withdrawn | ARC-5B | Early no-barrier experiment; never accepted for persistent queues.
+Needle-17 | accepted pilot handoff | ARC-6E | This is the alias used in change-calendar item CT-91.
+Needle-17-fast | exploratory sibling | ARC-6F | Disables the persistent write barrier; not the CT-91 candidate.
+Needle-client | unrelated | ARC-2D | Producer-side load generator; not a queue implementation.
+
+The ARC keys are archive pointers, not product version numbers. Follow ARC-6E to its register entry to obtain the package, build digest, applicable performance report and commercial schedule. A common incident in this pilot was to copy measurements from ARC-6F into an ARC-6E discussion because their calendar labels shared a prefix. The archive makes no claim that the accepted handoff passed a workload-specific deployment gate: accepted here means that the artifact and its reports were sealed for review.
+
+On 2026-08-26 the archive export mechanism was changed to UTF-8. That export date is not the date a benchmark was rerun. Entries in the artifact register are append-only; a report revision may attach a correction without changing the sealed build digest.

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections import Counter
+from bisect import bisect_left
+from collections import Counter, deque
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import fcntl
@@ -137,31 +138,44 @@ def _locator(text: str, start: int, end: int, metadata: dict) -> dict:
 def excerpts(
     metadata: dict, text: str, terms: list[str], window: int = 650,
     max_windows: int = 5, *, cache_hit: bool = True, intro_if_missing: bool = True,
+    offset: int = 0,
 ) -> dict:
-    # Round-robin across terms prevents an early frequent term hiding later ones.
-    hits = [
-        [match.start() for _, match in zip(range(max_windows), re.finditer(
-            re.escape(term), text, re.IGNORECASE
-        ))]
-        for term in terms if term.strip()
-    ]
-    positions = []
-    for rank in range(max_windows):
-        for group in hits:
-            if rank < len(group) and all(abs(group[rank] - old) > window for old in positions):
-                positions.append(group[rank])
-                if len(positions) == max_windows:
-                    break
-        if len(positions) == max_windows:
+    if window < 1 or not 1 <= max_windows <= 10 or offset < 0:
+        raise ValueError("window must be positive, limit must be 1-10 and offset must be nonnegative")
+    terms = list(dict.fromkeys(term.strip() for term in terms if term.strip()))
+    hits = [iter(re.finditer(re.escape(term), text, re.IGNORECASE)) for term in terms]
+    counts = dict.fromkeys(terms, 0)
+    active = deque(range(len(terms)))
+    centers, by_position, ranges = [], [], []
+    # Advance to the next uncovered passage for each term, then rotate. Scanning
+    # the full snapshot keeps late matches reachable and page sizes independent.
+    while active:
+        index = active.popleft()
+        for match in hits[index]:
+            counts[terms[index]] += 1
+            position = bisect_left(centers, match.start())
+            if any(start <= match.start() and match.end() <= end
+                   for start, end in by_position[max(0, position - 1):position + 1]):
+                continue
+            passage = (max(0, match.start() - window),
+                       min(len(text), max(match.start() + window, match.end())))
+            centers.insert(position, match.start())
+            by_position.insert(position, passage)
+            ranges.append(passage)
+            active.append(index)
             break
-    ranges = [(max(0, p - window), min(len(text), p + window)) for p in positions]
     if not ranges and intro_if_missing:
         ranges = [(0, min(len(text), window * 2))]
+    selected = ranges[offset:offset + max_windows]
     return {
         **metadata,
         "cache_hit": cache_hit,
-        "windows": [text[start:end] for start, end in ranges],
-        "locators": [_locator(text, start, end, metadata) for start, end in ranges],
+        "match_counts": counts,
+        "missing_terms": [term for term, count in counts.items() if not count],
+        "total_windows": len(ranges), "offset": offset,
+        "next_offset": offset + len(selected) if offset + len(selected) < len(ranges) else None,
+        "windows": [text[start:end] for start, end in selected],
+        "locators": [_locator(text, start, end, metadata) for start, end in selected],
     }
 
 
@@ -370,12 +384,12 @@ def set_need(
         return {"id": need, **record}
 
 
-def record_failure(need: str, action: str, reason: str) -> dict:
+def record_failure(need: str | None, action: str, reason: str) -> dict:
     if not action.strip() or not reason.strip():
         raise ValueError("action and reason must be non-empty")
     with _lock():
         task = _require_task(active=True)
-        if need not in task["needs"]:
+        if need is not None and need not in task["needs"]:
             raise ValueError("register the Need before recording a failed attempt")
         record = {
             "need": need, "action": action.strip(), "reason": reason.strip(),

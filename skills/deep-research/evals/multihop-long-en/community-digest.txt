@@ -1,0 +1,8 @@
+Queue Builders Digest, issue 19: a compact performance highlight
+Published 2026-08-28 by the fictional Queue Builders discussion group.
+
+Trivenn Queue has a promising persistent-worker result: about 47 percent less CPU for an 80/20 workload and a p95 quoted as 118 ms. For the two job classes, the highlighted table lists candidate means of 18 and 40 CPU-ms per accepted job, against reference means of 30 and 90. This looks like an attractive candidate for workloads that care about both cost and tail delay.
+
+Source note: this paragraph reproduces the executive-summary excerpt of PERF-246 circulated by Synthetic Systems Lab on 2026-08-20. We reformatted the table and shortened the text. We did not run a benchmark, inspect the raw event traces, review report appendices, or obtain a commercial quote. This digest is not maintained as a live revision of the laboratory report; the issue date records when the discussion was posted.
+
+The group has no information about independent security certification identifiers or contractual data-residency commitments. A reader should consult an applicable assurance document for those fields. This digest's audience discussion and its date do not independently corroborate the source experiment.

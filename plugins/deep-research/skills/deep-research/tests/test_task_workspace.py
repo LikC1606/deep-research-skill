@@ -258,6 +258,130 @@ class TaskWorkspaceTests(unittest.TestCase):
         fresh.set_need("N1", state="open", note="Try the new source")
         self.assertEqual(fresh.status()["next_need"], "N1")
 
+    def test_task_failure_before_need_registration_keeps_completion_explicit(self):
+        self.init()
+        failure = workspace.record_failure(None, "  Tool setup  ", "  Unavailable executable  ")
+        self.assertIsNone(failure["need"])
+        self.assertEqual(failure["action"], "Tool setup")
+        self.assertEqual(failure["reason"], "Unavailable executable")
+        summary = workspace.status()
+        self.assertEqual(summary["task"]["needs"], {})
+        self.assertEqual(summary["task"]["failure_count"], 1)
+        self.assertFalse(summary["completion_ready"])
+        self.add()
+        self.answer()
+        reviewed = workspace.status()["task"]["needs"]
+        workspace.record_failure(None, "Optional export tool", "Used saved text instead")
+        summary = workspace.status()
+        self.assertEqual(summary["task"]["needs"], reviewed)
+        self.assertTrue(summary["completion_ready"])
+        self.assertEqual(workspace.stop_task("All required evidence reviewed", complete=True)["state"],
+                         "complete")
+
+    def test_task_failure_preserves_unanswered_and_changed_evidence_needs(self):
+        self.init()
+        self.add("N1")
+        self.add("N2")
+        self.answer("N1")
+        self.evidence("N1", "refutes")
+        workspace.set_need("N2", state="blocked", note="Required source unavailable")
+        before = workspace.status()
+        task_before = workspace._task()
+        workspace.record_failure(None, "Shared helper", "Helper could not start")
+        after = workspace.status()
+        for key in ("remaining_needs", "next_need", "needs_requiring_review", "need_review_details",
+                    "completion_ready", "evidence_count"):
+            self.assertEqual(after[key], before[key], key)
+        self.assertEqual(after["task"]["needs"], task_before["needs"])
+        self.assertEqual(after["task"]["state"], task_before["state"])
+        path = workspace.root() / "task.json"
+        unchanged = path.read_bytes()
+        with self.assertRaisesRegex(ValueError, "every registered checklist"):
+            workspace.stop_task("Tool issue logged", complete=True)
+        self.assertEqual(path.read_bytes(), unchanged)
+
+    def test_failure_validation_is_atomic_for_explicit_need_and_task_lifecycle(self):
+        with self.assertRaisesRegex(ValueError, "init first"):
+            workspace.record_failure(None, "Tool setup", "Unavailable")
+        self.assertFalse((workspace.root() / "task.json").exists())
+        self.init()
+        self.add()
+        path = workspace.root() / "task.json"
+        before = path.read_bytes()
+        for need, action, reason in (("typo", "Read", "Unavailable"), ("", "Read", "Unavailable"),
+                                     (None, " ", "Unavailable"), (None, "Read", " "),
+                                     ("N1", " ", "Unavailable"), ("N1", "Read", " ")):
+            with self.subTest(need=need, action=action, reason=reason), self.assertRaises(ValueError):
+                workspace.record_failure(need, action, reason)
+            self.assertEqual(path.read_bytes(), before)
+        workspace.stop_task("Continue later")
+        before = path.read_bytes()
+        with self.assertRaisesRegex(ValueError, "use resume"):
+            workspace.record_failure(None, "Tool setup", "Unavailable")
+        self.assertEqual(path.read_bytes(), before)
+        workspace.resume_task()
+        workspace.record_failure(None, "Tool setup", "Unavailable")
+        self.answer()
+        workspace.stop_task("All required evidence reviewed", complete=True)
+        before = path.read_bytes()
+        with self.assertRaisesRegex(ValueError, "use resume"):
+            workspace.record_failure(None, "Late tool setup", "Unavailable")
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_task_and_need_failure_history_survives_reload_without_migrating_legacy_records(self):
+        self.init()
+        self.add()
+        legacy = workspace.record_failure("N1", "Read supplement", "Unavailable")
+        self.assertEqual(set(legacy), {"need", "action", "reason", "at"})
+        for index in range(12):
+            workspace.record_failure(None if index % 2 else "N1", f"Tool {index}", "Unavailable")
+        failures = workspace._task()["failures"]
+        workspace.stop_task("Continue later")
+        fresh = importlib.util.module_from_spec(SPEC)
+        SPEC.loader.exec_module(fresh)
+        summary = fresh.status()
+        self.assertEqual(summary["task"]["failure_count"], 13)
+        self.assertEqual(summary["task"]["recent_failures"], failures[-10:])
+        self.assertEqual(summary["remaining_needs"], ["N1"])
+        resumed = fresh.resume_task()
+        self.assertEqual(resumed["failures"], failures)
+        self.assertEqual(resumed["failures"][0], legacy)
+        self.assertEqual(set(resumed["needs"]), {"N1"})
+
+    def test_cli_can_record_task_failures_without_reading_sources_or_closing_needs(self):
+        def cli(*arguments, success=True):
+            result = subprocess.run([sys.executable, "-B", str(SCRIPT), *arguments],
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0 if success else 1,
+                             (result.stdout + result.stderr)[:2000])
+            return json.loads(result.stdout)
+
+        cli("init", "--deliverable", "Report", "--target", "Local fixture")
+        first = cli("failure", "--action", "Tool setup", "--reason", "Unavailable executable")
+        self.assertIsNone(first["need"])
+        self.assertTrue(all(first["run_usage"][key] == 0 for key in ("search", "read", "requests")))
+        cli("need", "N1", "--question", "Required result", "--proof", "Reported result")
+        cli("failure", "--need", "N1", "--action", "Read supplement", "--reason", "Unavailable")
+        for need in ("typo", ""):
+            before = (workspace.root() / "task.json").read_bytes()
+            self.assertIn("register the Need", cli("failure", "--need", need, "--action", "Read",
+                                                   "--reason", "Unavailable", success=False)["error"])
+            self.assertEqual((workspace.root() / "task.json").read_bytes(), before)
+        self.assertIn("every registered checklist", cli("stop", "--complete", "--reason", "Premature",
+                                                        success=False)["error"])
+        cli("stop", "--reason", "Continue later")
+        self.assertIn("use resume", cli("failure", "--action", "Tool setup", "--reason", "Unavailable",
+                                       success=False)["error"])
+        cli("resume")
+        cli("failure", "--action", "Other helper", "--reason", "Unavailable")
+        summary = cli("status")
+        self.assertEqual(summary["task"]["failure_count"], 3)
+        self.assertEqual([row["need"] for row in summary["task"]["recent_failures"]], [None, "N1", None])
+        self.assertEqual(summary["remaining_needs"], ["N1"])
+        self.assertFalse(summary["completion_ready"])
+        for name in ("corpus-trace.json", "sources", "searches", "evidence.json"):
+            self.assertFalse((workspace.root() / name).exists(), name)
+
     def test_completion_requires_nonempty_checklist_and_explicit_stop(self):
         self.init()
         self.assertFalse(workspace.status()["completion_ready"])

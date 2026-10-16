@@ -1,0 +1,11 @@
+L-44: synthetic worker CPU and queue module schedule
+Issued 2026-08-30. Effective for usage from 2026-09-01 through 2026-09-30 inclusive.
+All prices are fictional US-dollar amounts for this evaluation.
+
+Measured billable worker CPU is priced at USD 0.40 per CPU hour for both B-11 and Trivenn Queue 2.4.1. Billable worker CPU includes the primary worker and any persistence helper process. The conversion is 1,000 CPU-ms to one CPU-second and 3,600 CPU-seconds to one CPU hour. CPU is charged continuously on the aggregated measured quantity; there is no rounding per job, per attempt, per day or to whole hours. Round the final monthly dollar total to cents.
+
+The existing B-11 queue has a USD 0 fixed queue-module fee for September under the customer's existing license. The Trivenn Queue 2.4.1 persistent module has a fixed USD 60 monthly fee, in addition to CPU, for a deployment active throughout this September. The module fee does not vary with attempts, accepted jobs or CPU hours. Both options have no other queue-specific charge under this schedule. Experimental sibling builds are not covered by this commercial comparison.
+
+The earlier L-43 quotation expired on 2026-08-31 and is inapplicable to September. L-43 priced CPU at USD 0.35 per CPU hour and proposed an uncommitted introductory module waiver. Neither term carries into L-44. No introductory waiver, tax, discount, credit, idle-capacity commitment or shared infrastructure charge is included in the current quoted model.
+
+This sheet is a price schedule, not an assurance statement. It does not provide an independent security certification identifier, a contractual storage-region commitment, or a service-level guarantee for p95 latency. The absence of those fields in this schedule is not a statement that certification or region options do not exist. An evaluation may report that the supplied corpus does not establish those fields.

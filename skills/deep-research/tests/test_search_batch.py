@@ -102,6 +102,21 @@ class SearchBatchTests(unittest.TestCase):
         self.assertEqual((result["completed"], result["empty"], result["failed"]), (2, 1, 1))
         self.assertEqual(result["status"], "partial")
 
+    def test_incomplete_provider_success_keeps_batch_partial_and_errors_structured(self):
+        errors = [{"provider": "bing", "error": "Timeout: offline"}]
+
+        def retrieve(query, *args):
+            if query == "evaluation":
+                raise research.SearchError(errors)
+            return {**candidates(query), "status": "partial", "provider_errors": errors}
+
+        with mock.patch.object(research, "search", side_effect=retrieve):
+            result = research._search_batch(self.plan())
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual((result["partial"], result["failed"]), (1, 1))
+        self.assertEqual(result["results"][0]["result"]["provider_errors"], errors)
+        self.assertEqual(result["results"][1]["provider_errors"], errors)
+
     def test_known_artifact_routes_reach_search_and_use_separate_caches(self):
         rows = [{"query": "CSQE", "reason": "Find author material", "target": "CSQE",
                  "artifact": artifact, "proof": "Author method details"} for artifact in ("paper", "code")]

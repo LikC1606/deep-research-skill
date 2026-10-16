@@ -97,7 +97,7 @@ class ProviderRoutingTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "local files only"):
                 research._search_base("query", provider="direct")
 
-    def test_auto_supplements_mirrors_instead_of_counting_them_as_enough_results(self):
+    def test_auto_supplements_same_title_leads_without_assuming_they_are_mirrors(self):
         title = "A Comprehensive Benchmark for Deep Research Agents"
         mirrors = [card(title, f"https://mirror{i}.example/paper", "anysearch") for i in range(3)]
         primary = card("ALCE: Citation Support Evaluation", "https://arxiv.org/abs/2305.14627", "arxiv")
@@ -106,8 +106,8 @@ class ProviderRoutingTests(unittest.TestCase):
                 mock.patch.object(research, "_search_direct", return_value={"results": [primary]}) as direct:
             result = research._search_base("deep research citation support evaluation benchmark", 5, provider="auto")
         direct.assert_called_once()
-        self.assertIn("repeated_document_results", result["recall_checks"]["initial_gaps"])
-        self.assertEqual(sum(item["title"] == title for item in result["results"]), 1)
+        self.assertIn("similar_titles_require_read", result["recall_checks"]["initial_gaps"])
+        self.assertEqual(sum(item["title"] == title for item in result["results"]), 3)
         self.assertIn(primary["url"], [item["url"] for item in result["results"]])
 
     def test_auto_supplements_off_target_results_and_missing_need_terms(self):
@@ -129,12 +129,157 @@ class ProviderRoutingTests(unittest.TestCase):
         self.assertIn("too_few_distinct_documents", result["recall_checks"]["remaining_gaps"])
 
     def test_arxiv_abs_pdf_doi_are_one_discovery_document(self):
-        urls = ["https://arxiv.org/abs/2305.14627v2", "https://arxiv.org/pdf/2305.14627",
+        urls = ["https://arxiv.org/abs/2305.14627v2", "https://arxiv.org/pdf/2305.14627v2",
                 "https://arxiv.org/html/2305.14627v2",
-                "https://doi.org/10.48550/arXiv.2305.14627"]
+                "https://doi.org/10.48550/arXiv.2305.14627v2"]
         with mock.patch.object(research.base, "_url_ok", return_value=True):
             rows = research._rank_discovery([card(f"Title {i}", url, "anysearch") for i, url in enumerate(urls)], "citation", 5)
         self.assertEqual(len(rows), 1)
+
+    def test_search_keeps_short_official_title_with_partial_query_coverage(self):
+        official = {
+            "title": "SQLite FTS5 Extension",
+            "url": "https://www.sqlite.org/fts5.html",
+            "snippet": "FTS5 provides full-text search for SQLite.",
+            "engine": "duckduckgo-html",
+        }
+        with mock.patch.object(research, "_duckduckgo", return_value=[official]), \
+                mock.patch.object(research.base, "_bing", return_value=[]), \
+                mock.patch.object(research, "_academic_search_enabled", return_value=False), \
+                mock.patch.object(research, "_practitioner_search_enabled", return_value=False), \
+                mock.patch.object(research.base, "_url_ok", return_value=True):
+            result = research.search("SQLite FTS5 bm25 auxiliary function", provider="direct")
+        self.assertIn(official["url"], [row["url"] for row in result["results"]])
+        ranking = result["discovery_diagnostics"]["direct_ranking"]
+        self.assertEqual(ranking["input_candidates"], 1)
+        self.assertEqual(ranking["returned_candidates"], 1)
+        self.assertEqual(ranking["low_overlap_candidates_retained"], 1)
+
+    def test_search_ranks_partial_match_ahead_of_unrelated_high_authority_page(self):
+        official = {
+            "title": "SQLite FTS5 Extension",
+            "url": "https://www.sqlite.org/fts5.html",
+            "snippet": "FTS5 provides full-text search for SQLite.",
+            "engine": "anysearch",
+        }
+        unrelated = card("Mountain climbing field guide", "https://outdoors.example.edu/guide", "anysearch")
+        with mock.patch.object(research, "_search_anysearch", return_value=[unrelated, official]), \
+                mock.patch.object(research.base, "_url_ok", return_value=True):
+            result = research.search("SQLite FTS5 bm25 auxiliary function", provider="anysearch")
+        urls = [row["url"] for row in result["results"]]
+        self.assertEqual(set(urls), {official["url"], unrelated["url"]})
+        self.assertLess(urls.index(official["url"]), urls.index(unrelated["url"]))
+
+    def test_search_keeps_same_title_documents_at_different_version_urls(self):
+        title = "Widget Runtime Release Notes and Compatibility Guide"
+        versions = [
+            dict(card(title, "https://docs.example/widget/v1/release-notes", "anysearch"),
+                 snippet="Version 1 compatibility requirements."),
+            dict(card(title, "https://docs.example/widget/v2/release-notes", "anysearch"),
+                 snippet="Version 2 corrects the earlier compatibility requirements."),
+        ]
+        with mock.patch.object(research, "_search_anysearch", return_value=versions), \
+                mock.patch.object(research.base, "_url_ok", return_value=True):
+            result = research.search("Widget Runtime compatibility", provider="anysearch")
+        self.assertEqual({row["url"] for row in result["results"]}, {row["url"] for row in versions})
+
+    def test_search_merges_arxiv_representations_but_keeps_different_paper(self):
+        title = "Citation Evaluation for Language Models"
+        aliases = [
+            "https://arxiv.org/abs/2305.14627v2",
+            "https://arxiv.org/pdf/2305.14627v2",
+            "https://arxiv.org/html/2305.14627v2",
+            "https://doi.org/10.48550/arXiv.2305.14627v2",
+        ]
+        other_paper = "https://arxiv.org/abs/2401.00001"
+        candidates = [card(title, url, "anysearch") for url in aliases + [other_paper]]
+        with mock.patch.object(research, "_search_anysearch", return_value=candidates), \
+                mock.patch.object(research.base, "_url_ok", return_value=True):
+            result = research.search("citation evaluation", provider="anysearch")
+        urls = [row["url"] for row in result["results"]]
+        self.assertEqual(len(urls), 2)
+        self.assertEqual(len(set(urls) & set(aliases)), 1)
+        self.assertIn(other_paper, urls)
+
+    def test_arxiv_versions_and_unrelated_urls_are_not_merged(self):
+        urls = [
+            "https://arxiv.org/abs/2305.14627v1",
+            "https://arxiv.org/abs/2305.14627v2",
+            "https://arxiv.org/abs/2305.14627",
+            "https://docs.example/arxiv.org/abs/2305.14627v1",
+            "https://arxiv.org.example/abs/2305.14627v1",
+        ]
+        with mock.patch.object(research, "_search_anysearch", return_value=[
+            card("Citation Evaluation for Language Models", url, "anysearch") for url in urls
+        ]), mock.patch.object(research.base, "_url_ok", return_value=True):
+            result = research.search("citation evaluation", provider="anysearch")
+        self.assertEqual({row["url"] for row in result["results"]}, set(urls))
+
+    def test_direct_search_keeps_different_scholarly_documents_with_same_title(self):
+        title = "Citation Evaluation for Language Models"
+        papers = [card(title, "https://arxiv.org/abs/2305.14627", "arxiv"),
+                  card(title, "https://openalex.org/W123456", "openalex")]
+        with mock.patch.object(research, "_duckduckgo", return_value=[]), \
+                mock.patch.object(research.base, "_bing", return_value=[]), \
+                mock.patch.object(research, "_academic_search_enabled", return_value=True), \
+                mock.patch.object(research, "_practitioner_search_enabled", return_value=False), \
+                mock.patch.object(research, "_arxiv", return_value=papers[:1]), \
+                mock.patch.object(research, "_openalex_exact", return_value=papers[1:]), \
+                mock.patch.object(research.base, "_url_ok", return_value=True):
+            result = research.search("citation evaluation", provider="direct")
+        self.assertEqual({row["url"] for row in result["results"]}, {row["url"] for row in papers})
+        self.assertEqual(result["discovery_diagnostics"]["direct_ranking"]["input_candidates"], 2)
+
+    def test_ranking_diagnostics_account_for_policy_duplicates_aliases_and_page_limit(self):
+        candidates = [
+            card("Citation evaluation", "https://docs.example/a", "anysearch"),
+            card("Citation evaluation", "https://docs.example/a#details", "anysearch"),
+            card("Citation evaluation paper", "https://arxiv.org/abs/2305.14627v2", "anysearch"),
+            card("Citation evaluation paper", "https://arxiv.org/pdf/2305.14627v2", "anysearch"),
+            card("Citation evaluation", "https://blocked.example/a", "anysearch"),
+            card("Citation evaluation", "https://docs.example/b", "anysearch"),
+            card("Citation evaluation", "https://docs.example/c", "anysearch"),
+        ]
+        with mock.patch.object(research, "_search_anysearch", return_value=candidates), \
+                mock.patch.object(research.base, "_url_ok", side_effect=lambda url: "blocked.example" not in url):
+            result = research.search("citation evaluation", 2, provider="anysearch")
+        ranking = result["discovery_diagnostics"]["combined_ranking"]
+        self.assertEqual(ranking["input_candidates"], 7)
+        self.assertEqual(ranking["url_duplicates_removed"], 1)
+        self.assertEqual(ranking["url_policy_rejected"], 1)
+        self.assertEqual(ranking["document_aliases_removed"], 1)
+        self.assertEqual(ranking["page_limit_omitted"], 2)
+        self.assertEqual(ranking["returned_candidates"], len(result["results"]))
+
+    def test_combined_search_keeps_stronger_same_url_summary_regardless_of_provider_order(self):
+        weak = {"title": "SQLite FTS5 Extension", "url": "https://sqlite.org/fts5.html",
+                "snippet": "SQLite documentation index.", "engine": "anysearch"}
+        rich = dict(weak, snippet="SQLite FTS5 bm25 auxiliary function reference.", engine="duckduckgo-html")
+        for first, second in ((weak, rich), (rich, weak)):
+            with self.subTest(first=first["snippet"]), \
+                    mock.patch.object(research, "_search_anysearch", return_value=[first]), \
+                    mock.patch.object(research, "_duckduckgo", return_value=[second]), \
+                    mock.patch.object(research.base, "_bing", return_value=[]), \
+                    mock.patch.object(research, "_academic_search_enabled", return_value=False), \
+                    mock.patch.object(research, "_practitioner_search_enabled", return_value=False), \
+                    mock.patch.object(research.base, "_url_ok", return_value=True):
+                result = research.search("SQLite FTS5 bm25 auxiliary function", provider="auto")
+            self.assertEqual(len(result["results"]), 1)
+            self.assertEqual(result["results"][0]["snippet"], rich["snippet"])
+            self.assertNotIn("need_terms_missing_from_results", result["recall_checks"]["remaining_gaps"])
+
+    def test_structured_search_reports_recall_gaps_for_final_artifact_candidates(self):
+        broad = {"results": [card("Widget documentation", "https://docs.example/widget", "anysearch")],
+                 "recall_checks": {"initial_gaps": [], "remaining_gaps": ["too_few_distinct_documents"]}}
+        repositories = [card("Widget core", "https://github.com/team/widget-core", "github"),
+                        card("Widget examples", "https://github.com/team/widget-examples", "github")]
+        with mock.patch.object(research, "_search_base", return_value=broad), \
+                mock.patch.object(research, "_kaggle_topic_cards", return_value=[]), \
+                mock.patch.object(research, "_github_repositories", return_value=repositories):
+            result = research.search("Widget repository", target="Widget", artifact="repository",
+                                     proof="Author implementation", provider="hybrid")
+        self.assertEqual(len(result["results"]), 3)
+        self.assertNotIn("too_few_distinct_documents", result["recall_checks"]["remaining_gaps"])
 
     def test_named_research_repositories_do_not_require_solution_or_stars(self):
         for target, full_name in (("researchrubrics", "scaleapi/researchrubrics"),
@@ -148,6 +293,52 @@ class ProviderRoutingTests(unittest.TestCase):
                 self.assertNotIn("sort", query)
                 self.assertEqual(rows[0]["url"], f"https://github.com/{full_name}")
         self.assertIn("solution", research._github_query("Kaggle titanic winning code"))
+
+    def test_named_chinese_repository_candidates_survive_artifact_routing(self):
+        for target in ("轻量检索", "机器翻译", "轻量检索 2.0", "轻量检索 2026"):
+            repositories = [
+                {"full_name": "author/reference", "html_url": "https://github.com/author/reference",
+                 "description": f"{target}的官方参考实现", "stargazers_count": 0},
+                {"full_name": "author/examples", "html_url": "https://github.com/author/examples",
+                 "description": f"{target}的使用示例", "stargazers_count": 0},
+                {"full_name": "other/unrelated", "html_url": "https://github.com/other/unrelated",
+                 "description": "轻量分类、检索索引与机器学习示例", "stargazers_count": 0},
+            ]
+            with self.subTest(target=target), \
+                    mock.patch.object(research.base, "_get", return_value=(
+                        json.dumps({"items": repositories}), "application/json"
+                    )), \
+                    mock.patch.object(research, "_search_base", return_value={"results": []}):
+                result = research.search(f"{target} 仓库", target=target, artifact="repository",
+                                         proof="作者实现", provider="hybrid")
+            self.assertEqual({row["url"] for row in result["results"]},
+                             {row["html_url"] for row in repositories[:2]})
+            self.assertNotIn("no_target_match", result["recall_checks"]["remaining_gaps"])
+
+    def test_chinese_target_requires_the_complete_name_and_version(self):
+        cases = [
+            ("轻量检索", "轻量分类与检索索引"),
+            ("机器翻译", "机器学习与自动翻译"),
+            ("轻量检索 2.0", "轻量检索 2.1"),
+            ("轻量检索 2026", "机器翻译 2026"),
+            ("轻量检索 2026", "轻量检索 2025"),
+        ]
+        for target, title in cases:
+            with self.subTest(target=target, title=title):
+                unrelated = card(title, "https://github.com/other/project", "github")
+                self.assertFalse(research._target_matched(unrelated, target))
+
+    def test_latin_target_matching_preserves_abbreviations_versions_and_slugs(self):
+        for target, title, matched in (
+            ("ALCE", "Official ALCE implementation", True),
+            ("ALCE", "An unrelated citation implementation", False),
+            ("BrowseComp-Plus", "BrowseComp Plus reference", True),
+            ("Widget 2026", "Widget 2026 reference", True),
+            ("Widget 2026", "Widget 2025 reference", False),
+        ):
+            with self.subTest(target=target, title=title):
+                candidate = card(title, "https://github.com/author/project", "github")
+                self.assertEqual(research._target_matched(candidate, target), matched)
 
     def test_generic_writeup_does_not_add_competition_participant_terms(self):
         self.assertEqual(research._route_query("hybrid retrieval query decomposition", "writeup"),

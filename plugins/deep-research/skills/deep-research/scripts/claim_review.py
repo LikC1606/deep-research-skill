@@ -57,8 +57,18 @@ def _inventory(reporting, text):
     return {f"C{index}": candidate for index, candidate in enumerate(reporting._sentences(text), 1)}
 
 
-def _template(report_hash, inventory):
-    return {"report_hash": report_hash, "inventory_hash": _hash(inventory), "reviewer": "",
+def _review_version(value):
+    if not isinstance(value, dict):
+        raise ValueError("claim review must be a JSON object")
+    version = value.get("schema_version", 1)
+    if type(version) is not int or version not in {1, 2}:
+        raise ValueError("claim review schema_version must be 1 or 2")
+    return version
+
+
+def _template(report_hash, inventory, *, schema_version=1):
+    _review_version({"schema_version": schema_version})
+    template = {"report_hash": report_hash, "inventory_hash": _hash(inventory), "reviewer": "",
             "claims": [{"id": key, "candidate_id": key, "claim": value["sentence"],
                         "line": value["line"], "end_line": value["end_line"],
                         "kind": "unclassified", "verdict": "not_assessed", "rationale": "", "gap": "",
@@ -67,9 +77,65 @@ def _template(report_hash, inventory):
                                       "contribution": "not_assessed", "rationale": ""}
                                      for item in value["evidence_ids"]]}
                        for key, value in inventory.items()]}
+    if schema_version == 2:
+        template.update(schema_version=2,
+                        candidate_lengths={key: len(value["sentence"]) for key, value in inventory.items()})
+        for row in template["claims"]:
+            row.update(span=[0, len(row["claim"])], support_origin="not_assessed", derivation=None)
+    return template
+
+
+def _verify_partitions(rows, lengths):
+    if not isinstance(lengths, dict) or any(type(value) is not int or value < 1 for value in lengths.values()):
+        raise ValueError("v2 claim review requires candidate_lengths")
+    spans = {key: [] for key in lengths}
+    for row in rows:
+        span = row.get("span")
+        candidate_id = row["candidate_id"]
+        if (candidate_id not in spans or not isinstance(span, list) or len(span) != 2
+                or any(type(value) is not int for value in span)
+                or not 0 <= span[0] < span[1] <= lengths[candidate_id]
+                or len(row["claim"]) != span[1] - span[0]):
+            raise ValueError("span must be a nonempty Unicode character interval within its candidate")
+        spans[candidate_id].append(span)
+    for candidate_id, intervals in spans.items():
+        cursor = 0
+        for start, end in sorted(intervals):
+            if start != cursor:
+                raise ValueError("span partition must cover every candidate completely without gaps or overlaps")
+            cursor = end
+        if cursor != lengths[candidate_id]:
+            raise ValueError("span partition must cover every candidate completely without gaps or overlaps")
+
+
+def _support_origin(item, verdict, bindings):
+    origin, derivation = item.get("support_origin"), item.get("derivation")
+    supported = verdict in {"supported", "partial_support"}
+    if (not isinstance(origin, str) or origin not in {"not_assessed", "source_stated", "derived"}
+            or supported == (origin == "not_assessed")):
+        raise ValueError("support_origin must distinguish source_stated/derived support from not_assessed")
+    if origin != "derived":
+        if derivation is not None:
+            raise ValueError("derivation applies only to derived support")
+        return {"support_origin": origin, "derivation": None}
+    if not isinstance(derivation, dict):
+        raise ValueError("derived support requires a derivation with cited premises, formula, units and assumptions")
+    premises = derivation.get("premise_evidence_ids")
+    formula, units, assumptions = (derivation.get(key) for key in ("formula", "units", "assumptions"))
+    contributors = {binding["evidence_id"] for binding in bindings if binding["confirmed"]
+                    and not binding["snapshot_issue"] and binding["contribution"] in {"necessary", "helpful"}}
+    if (not isinstance(premises, list) or not premises or any(not isinstance(value, str) for value in premises)
+            or len(set(premises)) != len(premises) or not set(premises) <= contributors
+            or not isinstance(formula, str) or not formula.strip() or not isinstance(units, str) or not units.strip()
+            or not isinstance(assumptions, list)
+            or any(not isinstance(value, str) or not value.strip() for value in assumptions)):
+        raise ValueError("derivation requires valid contributing premises, a formula, units and explicit assumptions")
+    return {"support_origin": origin, "derivation": {"premise_evidence_ids": premises,
+            "formula": formula, "units": units, "assumptions": assumptions}}
 
 
 def _normalize(ws, judgments, report_hash, inventory):
+    version = _review_version(judgments)
     if judgments.get("report_hash") != report_hash or judgments.get("inventory_hash") != _hash(inventory):
         raise ValueError("claim judgments do not match report/inventory hash")
     reviewer = judgments.get("reviewer")
@@ -82,9 +148,11 @@ def _normalize(ws, judgments, report_hash, inventory):
         evidence = ws._evidence()
     rows, seen, covered, checked = [], set(), set(), {}
     for item in claims:
+        if not isinstance(item, dict):
+            raise ValueError("each claim must be a JSON object")
         claim_id, candidate_id = item.get("id"), item.get("candidate_id")
         if (not isinstance(claim_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", claim_id)
-                or claim_id in seen or candidate_id not in inventory):
+                or claim_id in seen or not isinstance(candidate_id, str) or candidate_id not in inventory):
             raise ValueError("claim IDs must be unique and reference an existing candidate_id")
         seen.add(claim_id)
         covered.add(candidate_id)
@@ -92,11 +160,18 @@ def _normalize(ws, judgments, report_hash, inventory):
         claim, kind, verdict = item.get("claim"), item.get("kind"), item.get("verdict")
         reason, gap = item.get("rationale"), item.get("gap", "")
         mode = item.get("support_mode", "not_assessed")
-        if (not isinstance(claim, str) or not claim.strip() or claim not in candidate["sentence"]
+        if (not isinstance(claim, str) or not (claim if version == 2 else claim.strip())
+                or claim not in candidate["sentence"]
                 or kind not in KINDS or verdict not in VERDICTS
                 or not isinstance(reason, str) or not isinstance(gap, str)
                 or mode not in {"not_assessed", "direct", "joint"}):
             raise ValueError("claim requires exact candidate text, kind, verdict, rationale and support_mode")
+        if version == 2:
+            span = item.get("span")
+            if (not isinstance(span, list) or len(span) != 2 or any(type(value) is not int for value in span)
+                    or not 0 <= span[0] < span[1] <= len(candidate["sentence"])
+                    or claim != candidate["sentence"][span[0]:span[1]]):
+                raise ValueError("claim must match its exact nonempty Unicode character span")
         if kind != "unclassified" and not reason.strip():
             raise ValueError("classified claims require a reviewer rationale")
         if kind not in {"factual", "inference"} and (verdict != "not_assessed" or mode != "not_assessed"):
@@ -148,10 +223,21 @@ def _normalize(ws, judgments, report_hash, inventory):
         rows.append({"id": claim_id, "candidate_id": candidate_id, "claim": claim, "kind": kind,
                      "verdict": verdict, "rationale": reason, "gap": gap, "support_mode": mode,
                      "line": candidate["line"], "end_line": candidate["end_line"], "bindings": bindings})
+        if version == 2:
+            rows[-1].update(span=span, **_support_origin(item, verdict, bindings))
     if covered != set(inventory):
         raise ValueError("claims must cover every candidate; do not omit unsupported prose")
-    return {"schema_version": 1, "report_hash": report_hash, "inventory_hash": _hash(inventory),
-            "reviewer": reviewer.strip(), "claims": rows, "assessment": "external_reviewer"}
+    record = {"schema_version": version, "report_hash": report_hash, "inventory_hash": _hash(inventory),
+              "reviewer": reviewer.strip(), "claims": rows, "assessment": "external_reviewer"}
+    if version == 2:
+        record["candidate_lengths"] = {key: len(value["sentence"]) for key, value in inventory.items()}
+        declared_lengths = judgments.get("candidate_lengths", record["candidate_lengths"])
+        if (not isinstance(declared_lengths, dict)
+                or any(type(value) is not int for value in declared_lengths.values())
+                or declared_lengths != record["candidate_lengths"]):
+            raise ValueError("candidate_lengths must match the original candidate inventory")
+        _verify_partitions(rows, record["candidate_lengths"])
+    return record
 
 
 def load_review(ws, report_hash: str, review_hash: str | None = None):
@@ -169,6 +255,41 @@ def load_review(ws, report_hash: str, review_hash: str | None = None):
     if _hash(record) != review_hash or record["report_hash"] != report_hash:
         raise ValueError("saved claim review hash does not match")
     return {**record, "review_hash": review_hash}
+
+
+def _candidate_metrics(record, rows):
+    groups = {}
+    for row in rows:
+        groups.setdefault(row["candidate_id"], []).append(row)
+    summary = {"unit": "candidate", "coverage_verified": False, "candidate_count": len(groups),
+               **{key: None for key in ("eligible_candidates", "assessed_candidates", "fully_supported_candidates",
+                   "unclassified_candidates", "fully_classified_candidates", "support_coverage",
+                   "semantic_assessment_coverage", "source_stated_supported_candidates", "derived_supported_candidates")}}
+    if _review_version(record) != 2:
+        return summary
+    _verify_partitions(rows, record.get("candidate_lengths"))
+    eligible = assessed = supported = unclassified = stated = derived = 0
+    for group in groups.values():
+        unknown = any(row["kind"] == "unclassified" for row in group)
+        unclassified += unknown
+        facts = [row for row in group if row["kind"] in {"factual", "inference"}]
+        if not facts:
+            continue
+        eligible += 1
+        assessed += not unknown and all(row["effective_verdict"] not in {
+            "not_assessed", "read_error", "execution_error"} for row in facts)
+        complete = not unknown and all(row["effective_verdict"] == "supported" for row in facts)
+        supported += complete
+        if complete:
+            origins = {row["support_origin"] for row in facts}
+            stated += origins == {"source_stated"}
+            derived += "derived" in origins
+    return {**summary, "coverage_verified": True, "eligible_candidates": eligible,
+            "assessed_candidates": assessed, "fully_supported_candidates": supported,
+            "unclassified_candidates": unclassified, "fully_classified_candidates": len(groups) - unclassified,
+            "support_coverage": supported / eligible if eligible else None,
+            "semantic_assessment_coverage": assessed / eligible if eligible else None,
+            "source_stated_supported_candidates": stated, "derived_supported_candidates": derived}
 
 
 def metrics(ws, record):
@@ -203,7 +324,10 @@ def metrics(ws, record):
                     evaluated += 1
                     useful += binding["contribution"] in {"necessary", "helpful"}
         effective.append(row)
-    return {"claim_count": len(effective), "kind_counts": dict(kinds), "verdict_counts": dict(verdicts),
+    version = _review_version(record)
+    origins = Counter(row["support_origin"] for row in effective
+                      if version == 2 and row["effective_verdict"] == "supported")
+    return {"unit": "claim_row", "claim_count": len(effective), "kind_counts": dict(kinds), "verdict_counts": dict(verdicts),
             "eligible_claims": eligible, "assessed_claims": assessed, "fully_supported_claims": supported,
             "support_coverage": supported / eligible if eligible else None,
             "semantic_assessment_coverage": assessed / eligible if eligible else None,
@@ -211,35 +335,52 @@ def metrics(ws, record):
             "assessed_citation_links": evaluated, "contributing_citation_links": useful,
             "citation_contribution_rate": useful / evaluated if evaluated else None,
             "invalid_citation_links": invalid, "unconfirmed_implicit_proposals": proposals,
+            "source_stated_supported_claims": origins["source_stated"] if version == 2 else None,
+            "derived_supported_claims": origins["derived"] if version == 2 else None,
+            "candidate_metrics": _candidate_metrics(record, effective),
             "limits": "Reviewer judgments only. Coverage uses factual/inference claims, not unknown or structural text. "
                       "Joint support does not require each source to entail the claim alone. Segmentation/classification may miss claims."}, effective
 
 
-def claims(ws, reporting, path: str, *, judgments_path: str | None = None, offset=0, limit=5):
+def claims(ws, reporting, path: str, *, judgments_path: str | None = None,
+           schema_version: int | None = None, offset=0, limit=5):
     if offset < 0 or not 1 <= limit <= 10:
         raise ValueError("offset must be nonnegative and limit between 1 and 10")
     text = reporting.read_report(path)
     report_hash = hashlib.sha256(text.encode()).hexdigest()
     inventory = _inventory(reporting, text)
     folder = ws.root() / "claim-reviews" / report_hash
-    template_path = folder / "judgments.template.json"
+    judgments = _read_json(Path(judgments_path)) if judgments_path is not None else None
+    if schema_version is not None:
+        _review_version({"schema_version": schema_version})
+    if judgments_path is not None:
+        version = _review_version(judgments)
+        if schema_version is not None and schema_version != version:
+            raise ValueError("--schema-version conflicts with the judgments schema_version")
+        record = None
+    else:
+        record = load_review(ws, report_hash)
+        version = _review_version(record) if record else 1
+        if schema_version is not None:
+            version = schema_version
+    template_path = folder / ("judgments.v2.template.json" if version == 2 else "judgments.template.json")
     if not template_path.exists():
-        template = _template(report_hash, inventory)
+        template = _template(report_hash, inventory, schema_version=version)
         if len(json.dumps(template, ensure_ascii=False, indent=2).encode()) >= MAX_BYTES:
             raise ValueError("claim review template exceeds 600000 bytes; split the report")
         ws._write_json(template_path, template)
     if judgments_path is not None:
-        record = _normalize(ws, _read_json(Path(judgments_path)), report_hash, inventory)
+        record = _normalize(ws, judgments, report_hash, inventory)
         if len(json.dumps(record, ensure_ascii=False, indent=2).encode()) >= MAX_BYTES:
             raise ValueError("claim review exceeds 600000 bytes; split the report")
         review_hash = _hash(record)
         with ws._lock():
             if not (folder / f"{review_hash}.json").exists():
                 ws._write_json(folder / f"{review_hash}.json", record)
+            record = load_review(ws, report_hash, review_hash)
             ws._write_json(folder / "latest.json", {"review_hash": review_hash})
-    record = load_review(ws, report_hash)
     if record is None:
-        record = _template(report_hash, inventory)
+        record = _template(report_hash, inventory, schema_version=version)
         with ws._lock():
             evidence = ws._evidence()
         record["claims"] = [{**row, "bindings": [{**binding, "evidence": evidence.get(binding["evidence_id"])} for binding in row["bindings"]]}
@@ -253,13 +394,28 @@ def claims(ws, reporting, path: str, *, judgments_path: str | None = None, offse
                                  "snapshot_id": (binding["evidence"] or {}).get("snapshot_id"),
                                  "ref": (binding["evidence"] or {}).get("ref")}
                                 for binding in row["bindings"][:20]]}
+        if row.get("derivation") is not None:
+            derivation = row["derivation"]
+            preview["derivation"] = {"premise_evidence_ids": [value[:128] for value in derivation["premise_evidence_ids"][:20]],
+                                     "formula": derivation["formula"][:1600], "units": derivation["units"][:800],
+                                     "assumptions": [value[:800] for value in derivation["assumptions"][:10]]}
+            derived_preview = preview["derivation"]
+            while len(json.dumps(derived_preview, ensure_ascii=False).encode()) > 8000:
+                if derived_preview["assumptions"]:
+                    derived_preview["assumptions"].pop()
+                else:
+                    for key in ("formula", "units"):
+                        derived_preview[key] = derived_preview[key][:len(derived_preview[key]) // 2]
+                    premises = derived_preview["premise_evidence_ids"]
+                    derived_preview["premise_evidence_ids"] = premises[:max(1, len(premises) // 2)]
         preview["preview_truncated"] = preview != row
         length = len(json.dumps(preview, ensure_ascii=False).encode())
         if page and size + length > 40_000:
             break
         page.append(preview)
         size += length
-    return {"report_hash": report_hash, "review_hash": record.get("review_hash"), "reviewer": record.get("reviewer") or None,
+    return {"schema_version": _review_version(record), "template_schema_version": version,
+            "report_hash": report_hash, "review_hash": record.get("review_hash"), "reviewer": record.get("reviewer") or None,
             "template_path": str(template_path.resolve()),
             "review_path": str((folder / f"{record['review_hash']}.json").resolve()) if record.get("review_hash") else None,
             "total_candidates": len(inventory), "metrics": summary, "claims": page, "offset": offset,
@@ -277,6 +433,8 @@ def _gap_preview(ws, gap):
                             for key, value in item.items()} for item in gap["attempts"]],
                  artifact_path=str((ws.root() / "task.json").resolve()),
                  preview_truncated=True)
+    if "span" in gap:
+        value.update(candidate_id=gap["candidate_id"], span=gap["span"])
     if "stop_reason" in gap:
         value["stop_reason"] = gap["stop_reason"][:1000]
     if "resolved_review_hash" in gap:
@@ -297,6 +455,8 @@ def new_gap(ws, reporting, path: str, claim_id: str, need: str, *, max_attempts=
         raise ValueError("gap requires an explicitly reviewed incomplete/error factual or inference claim")
     description = row["gap"] or "Re-read the missing or invalid source snapshot before reassessing this claim."
     basis = {"report_hash": report_hash, "claim_id": claim_id, "need": need}
+    if _review_version(record) == 2:
+        basis.update(candidate_id=row["candidate_id"], span=row["span"])
     gap_id = "GAP-" + _hash(basis)[:16].upper()
     with ws._lock():
         task = ws._require_task(active=True)
@@ -399,13 +559,18 @@ def gap_result(ws, gap_id, outcome, reason, evidence_ids=None):
                 raise ValueError("progress requires newly read evidence, not new links or repeated cards")
             if outcome == "resolved":
                 record = load_review(ws, gap["report_hash"])
+                if record is None:
+                    raise ValueError("resolution requires a new explicit supported review using the new evidence")
                 _, rows = metrics(ws, record)
                 row = next((row for row in rows if row["id"] == gap["claim_id"]), None)
-                if row is None or row["effective_verdict"] != "supported" or not new_ids <= {
+                if (row is None or row["claim"] != gap["claim"] or row["effective_verdict"] != "supported"
+                        or ("span" in gap and (row.get("span") != gap["span"]
+                                              or row["candidate_id"] != gap["candidate_id"]))
+                        or not new_ids <= {
                     item["evidence_id"] for item in row["bindings"] if item["confirmed"] and
                     item["contribution"] in {"necessary", "helpful"} and not item["snapshot_issue"]
-                }:
-                    raise ValueError("resolution requires a new explicit supported review using the new evidence")
+                }):
+                    raise ValueError("resolution requires a new explicit supported review of the same claim/span using the new evidence")
                 gap["resolved_review_hash"] = record["review_hash"]
             gap["attempts"][-1].update(outcome=outcome, reason=reason, evidence_ids=evidence_ids,
                                         assessment="caller")

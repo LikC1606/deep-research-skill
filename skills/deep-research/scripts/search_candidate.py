@@ -156,7 +156,7 @@ def _best_openalex_url(row: dict) -> str:
     return ""
 
 
-def _openalex(query: str, limit: int) -> list[dict]:
+def _openalex(query: str, limit: int, *, strict: bool = False) -> list[dict]:
     # OpenAlex full-text search now consumes daily credits.  Autocomplete and
     # direct work lookup are free, so discover compact candidates here and
     # retrieve the abstract only if the agent chooses to read one.
@@ -166,8 +166,12 @@ def _openalex(query: str, limit: int) -> list[dict]:
     url = "https://api.openalex.org/autocomplete/works?" + urllib.parse.urlencode(params)
     try:
         body, _ = base._get(url)
-        rows = json.loads(body).get("results", [])
+        rows = json.loads(body).get("results")
+        if not isinstance(rows, list):
+            raise ValueError("unexpected OpenAlex search response")
     except Exception:
+        if strict:
+            raise
         return []
     cards = []
     for row in rows[:limit]:
@@ -200,7 +204,7 @@ def _rank(cards: list[dict], query: str, limit: int) -> list[dict]:
     unique = {}
     for card in cards:
         key = card["url"].split("#", 1)[0]
-        if key not in unique and base._url_ok(key):
+        if key in unique or base._url_ok(key):
             card = dict(card, url=key)
             title_tokens = _tokens(card.get("title", ""))
             snippet_tokens = _tokens(card.get("snippet", ""))
@@ -215,7 +219,12 @@ def _rank(cards: list[dict], query: str, limit: int) -> list[dict]:
                 title_hits * 2.5 + all_hits * 0.6 + coverage * 3.0 + phrase_bonus
                 + citation_bonus + _source_bonus(key, card.get("engine", ""))
             )
-            unique[key] = card
+            # Keep a stronger discovery summary when providers repeat a URL.
+            previous = unique.get(key)
+            if previous is None or (card["_rank"], len(card.get("snippet", ""))) > (
+                previous["_rank"], len(previous.get("snippet", ""))
+            ):
+                unique[key] = card
 
     remaining = list(unique.values())
     selected = []
@@ -255,19 +264,16 @@ def search(query: str, limit: int = 8) -> dict:
 def _fetch_bytes(url: str) -> tuple[bytes, str, str]:
     if not base._url_ok(url):
         raise ValueError(f"blocked or unsupported URL: {url}")
-    response = requests.get(
+    with base.metrics.request(requests.get,
         url,
+        url_ok=base._url_ok,
         headers={
             "User-Agent": base.UA,
             "Accept": "application/pdf,text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.1",
         },
         timeout=base.TIMEOUT,
-        allow_redirects=True,
         stream=True,
-    )
-    try:
-        if not base._url_ok(response.url):
-            raise ValueError(f"redirected to blocked URL: {response.url}")
+    ) as response:
         response.raise_for_status()
         chunks = []
         size = 0
@@ -277,8 +283,6 @@ def _fetch_bytes(url: str) -> tuple[bytes, str, str]:
                 raise ValueError("document exceeds download size limit")
             chunks.append(chunk)
         return b"".join(chunks), response.url, response.headers.get("Content-Type", "")
-    finally:
-        response.close()
 
 
 def _normalise_text(value: str) -> str:

@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "criteria": [
+    {
+      "id": "P1",
+      "requirement": "Select the price version applicable to the September v3 workload.",
+      "reference": "The workload uses v3 throughout September 2026. The official v3 price list takes effect on 2026-09-01; the v2 archive is inapplicable to this workload.",
+      "source_ids": ["S1", "S2", "S3"],
+      "critical": true
+    },
+    {
+      "id": "P2",
+      "requirement": "State the current request price with its billing unit.",
+      "reference": "The v3 request price is USD 0.12 per 1,000 requests, charged linearly on the actual request count. It is not a per-token price.",
+      "source_ids": ["S1"],
+      "critical": true
+    },
+    {
+      "id": "P3",
+      "requirement": "State the current storage price with its billing unit.",
+      "reference": "The v3 storage price is USD 0.06 per GiB per day, settled daily. GiB-day must not be presented as GB-month.",
+      "source_ids": ["S1"],
+      "critical": true
+    },
+    {
+      "id": "P4",
+      "requirement": "Calculate the September request charge from the stated workload and current rate.",
+      "reference": "20,000 requests / (1,000 requests) * USD 0.12 = USD 2.40. This is a derived amount whose premises come from the workload and v3 price list.",
+      "source_ids": ["S1", "S3"],
+      "critical": true
+    },
+    {
+      "id": "P5",
+      "requirement": "Calculate the September storage charge from the stated workload and current rate.",
+      "reference": "10 GiB * 30 days * USD 0.06/(GiB-day) = USD 18.00. The stated 30 daily observations are the workload premise; monthly or decimal-GB rates cannot replace the current unit.",
+      "source_ids": ["S1", "S3"],
+      "critical": true
+    },
+    {
+      "id": "P6",
+      "requirement": "Calculate the complete scoped September total.",
+      "reference": "USD 2.40 request charge + USD 18.00 storage charge = USD 20.40. The workload states there is no other usage. A citation to only the export document or only one numerical premise cannot support the total.",
+      "source_ids": ["S1", "S3"],
+      "critical": true
+    },
+    {
+      "id": "P7",
+      "requirement": "Preserve the stated exclusions when interpreting the calculated total.",
+      "reference": "USD 20.40 is the forecast under public pre-tax prices, excluding tax, customer discounts and credits. It is not an established tax-inclusive or individually discounted invoice amount.",
+      "source_ids": ["S1", "S3"],
+      "critical": true
+    },
+    {
+      "id": "P8",
+      "requirement": "Explain the change in the input/request billing basis relative to v2.",
+      "reference": "v2 charged USD 0.02 per 1,000 input tokens; v3 charges USD 0.12 per 1,000 requests. These are different denominators. The workload provides no token counts, so the corpus does not establish a comparable v2 input bill or a request-price increase ratio.",
+      "source_ids": ["S1", "S2", "S3"],
+      "critical": true
+    },
+    {
+      "id": "P9",
+      "requirement": "Explain the change in the storage billing basis relative to v2.",
+      "reference": "v2 listed USD 0.03 per GB per month; v3 lists USD 0.06 per GiB per day. Both the size unit and time basis change. The numerical rates alone do not establish that the same storage workload simply costs twice as much.",
+      "source_ids": ["S1", "S2"],
+      "critical": true
+    },
+    {
+      "id": "P10",
+      "requirement": "Identify the export format applicable to v3.",
+      "reference": "The v3 official export documentation says JSONL, one JSON object per line. The archived v2 CSV format cannot replace this v3 evidence. S4 supports export format, not the current prices, total cost or a storage-region commitment.",
+      "source_ids": ["S2", "S4"],
+      "critical": true
+    },
+    {
+      "id": "P11",
+      "requirement": "Represent the tutorial's actual price provenance rather than treating its title or posting date as an updated price list.",
+      "reference": "Although S5 is titled as a v3 tutorial and dated 2026-09-05, its prices quote the 2025-11-01 official page and repeat the old token/GB-month terms. The title and posting date do not supersede S1's applicable v3 price list.",
+      "source_ids": ["S1", "S2", "S5"],
+      "critical": false
+    },
+    {
+      "id": "P12",
+      "requirement": "State the corpus's evidence limit about data storage region.",
+      "reference": "The complete supplied corpus does not establish a data storage region or contractual residency commitment. This is unknown from the supplied documents, not proof that no region options exist. S5's 'globally available' phrase and S4's export format do not establish where data are stored.",
+      "source_ids": ["S1", "S2", "S3", "S4", "S5"],
+      "critical": true
+    }
+  ]
+}

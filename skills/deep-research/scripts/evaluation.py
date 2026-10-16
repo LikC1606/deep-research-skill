@@ -9,6 +9,7 @@ import hashlib
 import json
 from pathlib import Path
 import random
+import re
 from types import SimpleNamespace
 
 
@@ -61,6 +62,8 @@ def _case_material(case_path: str):
         if (not isinstance(source["id"], str) or not 1 <= len(source["id"]) <= 64
                 or not source["id"].replace("-", "").replace("_", "").isalnum()):
             raise ValueError("source IDs must be safe filenames")
+        if re.fullmatch(r"REF-[0-9A-F]{16}", source["id"]):
+            raise ValueError("canonical REF identifiers are reserved; choose a different corpus source ID")
         source_path = (path.parent / source["path"]).resolve()
         if case.get("evaluator") and source_path == (path.parent / case["evaluator"]).resolve():
             raise ValueError("evaluator reference cannot be a researcher source")
@@ -121,10 +124,13 @@ def prepare(ws, reporting, case_path: str, a_path: str, b_path: str, output: str
         if run is not None:
             measured = Path(run) / "measurements.json"
             counts = Path(run) / ".adapter-counts.json"
+            adapter_usage = {"provenance": "adapter_counts", "values": _read_json(counts)} if counts.exists() else None
             if measured.exists():
                 measurements = {"provenance": "run_measurements", "values": _read_json(measured)}
-            elif counts.exists():
-                measurements = {"provenance": "adapter_counts", "values": _read_json(counts)}
+                if adapter_usage is not None:
+                    measurements["adapter_usage"] = adapter_usage
+            else:
+                measurements = adapter_usage
             trace_path = Path(run) / ".deep-research" / "corpus-trace.json"
             if trace_path.exists():
                 trace = _read_json(trace_path)
@@ -132,12 +138,17 @@ def prepare(ws, reporting, case_path: str, a_path: str, b_path: str, output: str
                         or trace.get("question_hash") != _digest(case["question"].encode())
                         or trace.get("corpus_hash") != _json_hash({item["id"]: item["hash"] for item in corpus})):
                     raise ValueError("run trace does not match the case, corpus, question or budget")
-                if measurements is None:
-                    measurements = {"provenance": "fixed_corpus_tool_trace", "values": {
-                        "search_calls": sum(item["kind"] == "search" for item in trace["operations"]),
-                        "source_reads": sum(item["kind"] == "read" for item in trace["operations"]),
-                        "elapsed_tool_seconds": sum(item.get("elapsed_seconds", 0) for item in trace["operations"]),
-                        "scope": "fixed_corpus_tools_only", "cost_usd": None}}
+                tool_usage = {"provenance": "fixed_corpus_tool_trace", "values": {
+                    "search_calls": sum(item["kind"] == "search" for item in trace["operations"]),
+                    "source_reads": sum(item["kind"] == "read" for item in trace["operations"]),
+                    "elapsed_tool_seconds": sum(item.get("elapsed_seconds", 0) for item in trace["operations"]),
+                    "scope": "fixed_corpus_tools_only", "cost_usd": None}}
+                if not measured.exists():
+                    measurements = tool_usage
+                    if adapter_usage is not None:
+                        measurements["adapter_usage"] = adapter_usage
+                else:
+                    measurements["fixed_corpus_usage"] = tool_usage
             if semantic_review is not None:
                 run_root = Path(run) / ".deep-research"
                 run_workspace = SimpleNamespace(root=lambda: run_root,
@@ -152,6 +163,11 @@ def prepare(ws, reporting, case_path: str, a_path: str, b_path: str, output: str
                                                 {"ref": (binding["evidence"] or {}).get("ref"),
                                                  "snapshot_id": (binding["evidence"] or {}).get("snapshot_id")}
                                                 for binding in claim["bindings"]]} for claim in claims]}
+                    if record.get("schema_version") == 2:
+                        reviewed["schema_version"] = 2
+                        for saved, claim in zip(reviewed["claims"], claims):
+                            saved.update({name: claim[name] for name in (
+                                "candidate_id", "span", "support_origin", "derivation")})
         key[label] = {"input": original, "report_path": str(Path(report_path).resolve()),
                       "run": run, "measurements": measurements, "corpus_trace": trace, "claim_review": reviewed}
     comparison = {"schema_version": 1, "case_id": case["id"], "case_hash": _digest(path.read_bytes()),

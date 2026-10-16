@@ -1,0 +1,14 @@
+Artifact register: ARC-6E
+Custodian: Synthetic Systems Lab release engineering. Signed 2026-08-19.
+
+Product label: Trivenn Queue 2.4.1
+Package file: tq-2.4.1-linux-x64
+Sealed build digest: tq241-c17e-9b42
+Worker mode: persistent write barrier on; admission ceiling 32; eight producer streams.
+Reference comparison build: B-11, the existing queue with the same persistence barrier.
+Performance dossier: PERF-246, including its attached revisions and appendices.
+Commercial terms pointer: schedule L-44, applicable version determined by its effective date.
+
+This entry does not contain performance measurements. Match both build digest and mode when using the dossier. A report for 2.4.0 or for a no-barrier build does not describe this artifact. The sibling ARC-6F carries product label Trivenn Queue 2.4.1-experimental and digest tq241-x00a-1d13. Its package cannot replace ARC-6E under the CT-91 request even if a short announcement abbreviates both products to Trivenn Queue.
+
+The digest tq241-c17e-9b42 was not changed when PERF-246 was corrected on 2026-08-24. Those changes revise the accounting boundary and a latency-column label in the report, not the executable. Certification and contractual hosting commitments are not fields in this artifact register; their absence here does not describe whether such commitments exist elsewhere.

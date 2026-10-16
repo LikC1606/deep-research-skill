@@ -1,0 +1,529 @@
+{
+  "schema_version": 1,
+  "id": "multihop-long-en-judge-calibration-v1",
+  "case": "../case.json",
+  "criteria": [
+    {
+      "id": "C01",
+      "requirement": "Identify the requested deployable object through the alias, archive and artifact-register chain, preserving package, digest and persistence-mode identity; a sealed handoff is not workload-gate passage."
+    },
+    {
+      "id": "C02",
+      "requirement": "Use the corrected billable all-worker CPU means per accepted clean/retry job, including failed attempts and persistence work exactly once."
+    },
+    {
+      "id": "C03",
+      "requirement": "Calculate the matching workload-weighted CPU means and monthly CPU hours with accepted-job denominators, explicit units and the correct CPU-time conversion."
+    },
+    {
+      "id": "C04",
+      "requirement": "Calculate both monthly CPU-plus-queue-license totals under the applicable September schedule, including the candidate's fixed license fee."
+    },
+    {
+      "id": "C05",
+      "requirement": "Calculate relative savings in total monthly CPU-plus-license spending against B-11, distinguishing this percentage from the CPU-only reduction."
+    },
+    {
+      "id": "C06",
+      "requirement": "Apply CT-91's monthly cost gate to the matching total costs, state the corresponding dollar ceiling and correctly decide whether the candidate passes."
+    },
+    {
+      "id": "C07",
+      "requirement": "Preserve the latency measurement identity by distinguishing worker service-time p95 from the corrected pooled steady-state queue-residence p95 for the matching workload."
+    },
+    {
+      "id": "C08",
+      "requirement": "Apply CT-91's queue-residence p95 threshold to the matching corrected statistic and correctly decide whether the candidate passes."
+    },
+    {
+      "id": "C09",
+      "requirement": "Represent S5's actual provenance, distinguishing a reproduced pre-correction excerpt from an independent new measurement or independent corroboration."
+    },
+    {
+      "id": "C10",
+      "requirement": "State what the complete supplied corpus establishes about an independent security-certification identifier; preserve an evidence gap rather than inventing a determined identifier or inferring nonexistence from absence."
+    },
+    {
+      "id": "C11",
+      "requirement": "State what the complete supplied corpus establishes about the contractual queue-record storage region; preserve an evidence gap rather than inventing a determined region or treating a benchmark location as a commitment."
+    },
+    {
+      "id": "C12",
+      "requirement": "Give a bounded approval recommendation consistent with the gate evidence, treating a follow-up experiment as proposed work and avoiding a future production guarantee."
+    }
+  ],
+  "anchor": {
+    "path": "original.md",
+    "sha256": "fb07128d834c50b0e66796164f1453759cc973f55ecd0908d473bd5ef4a94bad",
+    "expected": {
+      "C01": {
+        "verdict": "supported",
+        "support_origin": "source_stated"
+      },
+      "C02": {
+        "verdict": "supported",
+        "support_origin": "source_stated"
+      },
+      "C03": {
+        "verdict": "supported",
+        "support_origin": "derived"
+      },
+      "C04": {
+        "verdict": "supported",
+        "support_origin": "derived"
+      },
+      "C05": {
+        "verdict": "supported",
+        "support_origin": "derived"
+      },
+      "C06": {
+        "verdict": "supported",
+        "support_origin": "derived"
+      },
+      "C07": {
+        "verdict": "supported",
+        "support_origin": "source_stated"
+      },
+      "C08": {
+        "verdict": "supported",
+        "support_origin": "derived"
+      },
+      "C09": {
+        "verdict": "supported",
+        "support_origin": "source_stated"
+      },
+      "C10": {
+        "verdict": "supported",
+        "support_origin": "source_stated"
+      },
+      "C11": {
+        "verdict": "supported",
+        "support_origin": "source_stated"
+      },
+      "C12": {
+        "verdict": "supported",
+        "support_origin": "derived"
+      }
+    }
+  },
+  "variants": [
+    {
+      "id": "omit-license",
+      "kind": "error",
+      "path": "error-omit-license.md",
+      "sha256": "27b7d9933b1ca12bfc044a3c04195a37a3496d784a173e4e36f041af218fe858",
+      "description": "Omit the USD 60 fixed candidate license from the complete monthly cost, propagate USD 208 and 25.71% savings, and mark only the cost gate as passing. CPU accounting and the failing latency gate remain correct.",
+      "targets": [
+        "C04",
+        "C05",
+        "C06"
+      ],
+      "expected": {
+        "C01": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C02": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C03": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C04": {
+          "verdict": "refuted",
+          "support_origin": "not_assessed"
+        },
+        "C05": {
+          "verdict": "refuted",
+          "support_origin": "not_assessed"
+        },
+        "C06": {
+          "verdict": "refuted",
+          "support_origin": "not_assessed"
+        },
+        "C07": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C08": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C09": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C10": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C11": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C12": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        }
+      }
+    },
+    {
+      "id": "service-as-queue",
+      "kind": "error",
+      "path": "error-service-as-queue.md",
+      "sha256": "301831e5f4d6c4b831df3ec5474d719651afc8f74e72df16f8baf61eef82eccc",
+      "description": "Present the 118 ms worker-service p95 as corrected queue residence and propagate a passing latency gate. All CPU and total-cost calculations, including the failing cost gate, remain correct.",
+      "targets": [
+        "C07",
+        "C08"
+      ],
+      "expected": {
+        "C01": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C02": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C03": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C04": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C05": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C06": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C07": {
+          "verdict": "refuted",
+          "support_origin": "not_assessed"
+        },
+        "C08": {
+          "verdict": "refuted",
+          "support_origin": "not_assessed"
+        },
+        "C09": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C10": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C11": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C12": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        }
+      }
+    },
+    {
+      "id": "digest-independent",
+      "kind": "error",
+      "path": "error-digest-independent.md",
+      "sha256": "90b0304f70e37ff563b71c7ba29435ce27e0ac8d1f38a6059d2ea90720d64918",
+      "description": "Present S5's copied pre-correction excerpt as an independent new measurement and corroboration of the old measurement boundary. Continue to use S4's corrected CPU and queue-residence values for all calculations and gates.",
+      "targets": [
+        "C09"
+      ],
+      "expected": {
+        "C01": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C02": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C03": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C04": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C05": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C06": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C07": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C08": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C09": {
+          "verdict": "refuted",
+          "support_origin": "not_assessed"
+        },
+        "C10": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C11": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C12": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        }
+      }
+    },
+    {
+      "id": "assurance-invented",
+      "kind": "error",
+      "path": "error-assurance-invented.md",
+      "sha256": "cacabd496a169b899bc799927f400014cdfc9e00e6a9d3088bcf8e4bdc489a30",
+      "description": "Replace unresolved assurance fields with determined certification SEC-241-VALID and contractual region US-East-Contract-1. Neither value occurs in the complete corpus; missing support warrants insufficient_evidence rather than inferring that these values cannot exist.",
+      "targets": [
+        "C10",
+        "C11"
+      ],
+      "expected": {
+        "C01": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C02": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C03": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C04": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C05": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C06": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C07": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C08": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C09": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C10": {
+          "verdict": "insufficient_evidence",
+          "support_origin": "not_assessed"
+        },
+        "C11": {
+          "verdict": "insufficient_evidence",
+          "support_origin": "not_assessed"
+        },
+        "C12": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        }
+      }
+    },
+    {
+      "id": "compressed",
+      "kind": "control",
+      "path": "control-compressed.md",
+      "sha256": "d4f22a847b810406f91b6ede8937231d662e63cd972f390ee312cf20c9c704f4",
+      "description": "Compress repeated prose while preserving the decision-relevant facts, transparent calculations, provenance, evidence limits and bounded recommendation. Length earns no factual credit.",
+      "targets": [],
+      "expected": {
+        "C01": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C02": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C03": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C04": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C05": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C06": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C07": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C08": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C09": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C10": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C11": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C12": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        }
+      }
+    },
+    {
+      "id": "reordered",
+      "kind": "control",
+      "path": "control-reordered.md",
+      "sha256": "f3aa3b77c90f19dbff647f4d666f214a7ee0ebf21cf5a6aa793a8c7150ec5d11",
+      "description": "Reorder complete report sections without changing any section text. Section order does not alter factual support.",
+      "targets": [],
+      "expected": {
+        "C01": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C02": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C03": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C04": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C05": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C06": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C07": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C08": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C09": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C10": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C11": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C12": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        }
+      }
+    },
+    {
+      "id": "repeated",
+      "kind": "control",
+      "path": "control-repeated.md",
+      "sha256": "bc74570dad182e2dd3c8095cae4d1a79d81d9f000489c220e3b7e7e14851db5c",
+      "description": "Repeat the correct total-savings and cost-gate paragraph once. Duplicated statements contribute no additional factual credit.",
+      "targets": [],
+      "expected": {
+        "C01": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C02": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C03": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C04": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C05": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C06": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C07": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C08": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        },
+        "C09": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C10": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C11": {
+          "verdict": "supported",
+          "support_origin": "source_stated"
+        },
+        "C12": {
+          "verdict": "supported",
+          "support_origin": "derived"
+        }
+      }
+    }
+  ]
+}

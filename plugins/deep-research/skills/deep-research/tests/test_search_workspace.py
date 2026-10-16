@@ -178,6 +178,86 @@ class SearchWorkspaceTests(unittest.TestCase):
             self.assertEqual(retrieve.call_count, 1)
         self.assertEqual(workspace.status()["task"]["needs"]["N1"]["state"], "open")
 
+    def test_provider_timeouts_are_not_cached_and_the_next_attempt_can_recover(self):
+        self.init_needs()
+        with mock.patch.dict(os.environ, {"DRBENCH_ACADEMIC_SEARCH": "0", "DRBENCH_PRACTITIONER_SEARCH": "0"}), \
+                mock.patch.object(research.base, "_get", side_effect=research.base.requests.Timeout("offline")) as fetch:
+            with self.assertRaises(research.SearchError) as failure:
+                self.search(need="N1")
+            self.assertEqual(fetch.call_count, 2)
+        self.assertEqual({row["provider"] for row in failure.exception.provider_errors}, {"duckduckgo", "bing"})
+        with mock.patch.object(research, "_search_direct", return_value=candidates()) as retrieve:
+            self.assertFalse(self.search(need="N1")["cache_hit"])
+            self.assertTrue(self.search(need="N1")["cache_hit"])
+            self.assertEqual(retrieve.call_count, 1)
+        self.assertEqual(workspace.status()["task"]["failure_count"], 1)
+
+    def test_successful_empty_provider_responses_are_cached(self):
+        with mock.patch.dict(os.environ, {"DRBENCH_ACADEMIC_SEARCH": "0", "DRBENCH_PRACTITIONER_SEARCH": "0"}), \
+                mock.patch.object(research.base, "_get", side_effect=[('<div class="no-results">No results found</div>', ""), ("<rss><channel/></rss>", "")]) as fetch:
+            result = self.search()
+            self.assertEqual(result["status"], "empty")
+            self.assertEqual([row["status"] for row in result["provider_results"]], ["empty", "empty"])
+            self.assertTrue(self.search()["cache_hit"])
+            self.assertEqual(fetch.call_count, 2)
+
+    def test_challenge_and_unknown_responses_are_not_cached_as_empty(self):
+        for page in ('<form id="challenge-form">Verify you are human</form>', "<html>unexpected shell</html>"):
+            with self.subTest(page=page), \
+                    mock.patch.dict(os.environ, {"DRBENCH_ACADEMIC_SEARCH": "0", "DRBENCH_PRACTITIONER_SEARCH": "0"}), \
+                    mock.patch.object(research.base, "_get", side_effect=lambda url: ("<rss><channel/></rss>" if "bing.com" in url else page, "")) as fetch:
+                for _ in range(2):
+                    with self.assertRaises(research.SearchError):
+                        self.search()
+                self.assertEqual(fetch.call_count, 4)
+
+    def test_partial_results_keep_errors_including_when_replayed(self):
+        lead = {"url": "https://example.org/cost", "title": "Method cost", "snippet": "Method cost"}
+        with mock.patch.dict(os.environ, {"DRBENCH_ACADEMIC_SEARCH": "0", "DRBENCH_PRACTITIONER_SEARCH": "0"}), \
+                mock.patch.object(research, "_duckduckgo", return_value=[lead]), \
+                mock.patch.object(research.base, "_bing", side_effect=research.base.requests.HTTPError("429")), \
+                mock.patch.object(research.base, "_url_ok", return_value=True):
+            result = self.search()
+            replay = self.search()
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(len(result["results"]), 1)
+        self.assertIn("429", result["provider_errors"][0]["error"])
+        self.assertTrue(replay["cache_hit"])
+        self.assertEqual(replay["status"], "partial")
+
+    def test_structured_route_can_recover_after_broad_search_failure(self):
+        broad = {"results": [], "provider_errors": [{"provider": "bing", "error": "timeout"}]}
+        repository = {"url": "https://github.com/team/widget", "title": "Widget implementation"}
+        with mock.patch.object(research, "_search_direct", return_value=broad), \
+                mock.patch.object(research, "_github_repositories", return_value=[repository]), \
+                mock.patch.object(research.base, "_url_ok", return_value=True):
+            result = self.search("Widget repository", target="Widget", artifact="code", proof="implementation")
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["results"][0]["title"], repository["title"])
+        self.assertEqual(result["provider_errors"], broad["provider_errors"])
+
+    def test_ranking_diagnostics_survive_partial_cache_and_local_only_replay(self):
+        lead = {"url": "https://sqlite.org/fts5.html", "title": "SQLite FTS5 Extension",
+                "snippet": "Full-text search for SQLite.", "engine": "duckduckgo-html"}
+        with mock.patch.object(research, "_duckduckgo", return_value=[lead]), \
+                mock.patch.object(research.base, "_bing", side_effect=RuntimeError("temporary failure")), \
+                mock.patch.object(research, "_academic_search_enabled", return_value=False), \
+                mock.patch.object(research, "_practitioner_search_enabled", return_value=False), \
+                mock.patch.object(research.base, "_url_ok", return_value=True):
+            result = self.search("SQLite FTS5 bm25 auxiliary function")
+        with mock.patch.dict(os.environ, {"DEEP_RESEARCH_SOURCE_POLICY": "local_only"}), \
+                mock.patch.object(research, "search", side_effect=AssertionError("cache must prevent retrieval")):
+            replay = self.search("SQLite FTS5 bm25 auxiliary function")
+        self.assertTrue(replay["cache_hit"])
+        self.assertEqual(replay["status"], "partial")
+        self.assertEqual(replay["discovery_diagnostics"], result["discovery_diagnostics"])
+        self.assertEqual(replay["provider_errors"], result["provider_errors"])
+        self.assertEqual(replay["discovery_diagnostics"]["direct_ranking"]["low_overlap_candidates_retained"], 1)
+        self.assertFalse(replay["results"][0]["citable"])
+        self.assertEqual(replay["results"][0]["evidence_status"], "unread_lead")
+        self.assertNotIn(lead["url"], json.dumps(replay))
+        self.assertEqual(research._load_citations(), [])
+
     def test_cli_uses_persistent_search_history_and_explicit_refresh(self):
         self.init_needs()
         with mock.patch.object(research, "search", return_value=candidates()):
