@@ -1,17 +1,16 @@
-<!-- README_SYNC: source=468295cae9529892902841852d0e79d2c16a190b; updated=2026-11-18 -->
-
-简体中文 · [English](./README_EN.md)
+<!-- README_SYNC: source=468295cae9529892902841852d0e79d2c16a190b; updated=2026-11-23 -->
+<p align="center">简体中文 · <a href="./README_EN.md" lang="en">English</a></p>
 
 # Deep Research
 
-给 Codex 或其他支持 Agent Skills 的客户端提供一套可回查的研究流程：先问什么证据会改变结论，读正文，再用读到的术语、冲突和线索决定下一步。
-
-觉得这套查证方法有用，可以 [Star 收藏](https://github.com/LikC1606/deep-research-skill/stargazers)。
+给 Codex 及其他支持 Agent Skills 的客户端提供一套可回查的深度研究流程：先明确哪些证据会改变结论，再直读原始正文，依据读到的术语、冲突与线索决定下一步检索方向。
 
 [![Stars](https://img.shields.io/github/stars/LikC1606/deep-research-skill)](https://github.com/LikC1606/deep-research-skill/stargazers)
 [![Codex Plugin](https://img.shields.io/badge/Codex%20Plugin-v1.0.0-10A37F)](./plugins/deep-research/)
 [![skills.sh](https://skills.sh/b/LikC1606/deep-research-skill)](https://skills.sh/LikC1606/deep-research-skill)
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+
+觉得这套查证方法有用，欢迎 [Star 收藏](https://github.com/LikC1606/deep-research-skill/stargazers)。
 
 ## 安装与试用
 

@@ -1,17 +1,16 @@
-<!-- README_SYNC: source=468295cae9529892902841852d0e79d2c16a190b; updated=2026-11-18 -->
-
-[简体中文](./README.md) · English
+<!-- README_SYNC: source=468295cae9529892902841852d0e79d2c16a190b; updated=2026-11-23 -->
+<p align="center"><a href="./README.md" lang="zh-CN">简体中文</a> · English</p>
 
 # Deep Research
 
-A research workflow for Codex and other Agent Skills clients. Define what evidence would change the answer, read the source itself, then follow the terms, conflicts, and references you found.
-
-[Star the repository](https://github.com/LikC1606/deep-research-skill/stargazers) if you want to return to the workflow.
+An auditable research workflow for Codex and other Agent Skills clients: define what evidence would change the decision, read the primary source itself, and pivot based on the terms, conflicts, and citations you uncover.
 
 [![Stars](https://img.shields.io/github/stars/LikC1606/deep-research-skill)](https://github.com/LikC1606/deep-research-skill/stargazers)
 [![Codex Plugin](https://img.shields.io/badge/Codex%20Plugin-v1.0.0-10A37F)](./plugins/deep-research/)
 [![skills.sh](https://skills.sh/b/LikC1606/deep-research-skill)](https://skills.sh/LikC1606/deep-research-skill)
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+
+[Star the repository](https://github.com/LikC1606/deep-research-skill/stargazers) to keep this evidence-driven research workflow handy.
 
 ## Install and try it
 
