@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use Deep Research Skill in your research workflow, please cite this repository."
+type: software
+title: "Deep Research: Evidence-Driven Search and Synthesis Skill"
+authors:
+  - family-names: Liu
+    given-names: Zhenhao
+    affiliation: "WestlakeNLP, Westlake University"
+    website: https://likc1606.github.io/
+repository-code: https://github.com/LikC1606/deep-research-skill
+url: https://skills.sh/LikC1606/deep-research-skill
+license: MIT
+keywords:
+  - agent-skills
+  - deep-research
+  - evidence-synthesis
+  - codex
